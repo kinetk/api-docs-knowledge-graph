@@ -1,0 +1,35 @@
+name: Deploy Fern Docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "fern/**"
+      - ".github/workflows/deploy-docs.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: fern-docs
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Fern CLI
+        run: npm install -g fern-api
+
+      - name: Validate workspace
+        run: fern check
+
+      - name: Publish docs
+        env:
+          FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
+        run: fern generate --docs

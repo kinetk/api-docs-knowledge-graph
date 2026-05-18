@@ -1,0 +1,126 @@
+---
+title: Intelligence Jobs
+description: The async job lifecycle — submit, poll, cache, dedup.
+---
+
+All heavy intelligence work runs through one async endpoint pair:
+
+- `POST /intelligence/jobs` — submit a job, get a `jobId` immediately.
+- `GET /intelligence/jobs/{id}` — poll status; once `succeeded`, the response carries the result.
+
+This page covers the lifecycle, the four supported `kind` values, the cache + dedup semantics, and the failure modes.
+
+## Why async
+
+The intelligence pipeline does real work: text embeddings, multimodal vector search fan-out, relational joins, KMeans clustering, two LLM calls. Typical end-to-end latency is 5–20 seconds. The synchronous API path caps at ~29 seconds, so heavy work runs async — submit returns in under 500 ms, and the worker has a 5-minute budget.
+
+## Supported kinds
+
+| `kind` | Input | Output | Cache window |
+|---|---|---|---|
+| `intelligence_search` | `query` + filters | Ranked content + retrieval diagnostics | 15 min |
+| `intelligence_discover` | `query` + filters | Search + narratives + analytics + LLM insights | 1 h |
+| `campaign_brief` | `campaign` object | Persisted LLM-generated brief | 6 h |
+| `llm_context` | `campaign` object | Ephemeral LLM-ready context bundle | 6 h |
+
+`intelligence_search` / `intelligence_discover` take a free-text `query`. `campaign_brief` / `llm_context` take a structured `campaign` object — see the [API Reference](/api-reference) for full shapes.
+
+Common input filters apply to all four:
+
+- `platforms`: e.g. `["TIKTOK", "INSTAGRAM"]`. Defaults to all.
+- `window`: `24h | 7d | 30d | all`. Defaults to `all` (no time filter).
+- `limit` / `topK`: max items to return. Default 1000, hard cap 1000 in the MCP client (configurable in direct HTTP).
+- `expandQuery`: opt in to LLM-backed query expansion (search-only).
+
+## Submit response shapes
+
+A submit can return one of three things depending on dedup + cache state:
+
+```jsonc
+// 1. Fresh — new work queued
+HTTP 202
+{ "jobId": "...", "status": "queued", "statusUrl": "/intelligence/jobs/..." }
+
+// 2. Dedup — identical input already running, same jobId
+HTTP 202
+{ "jobId": "...", "status": "queued", "dedup": true, "statusUrl": "..." }
+
+// 3. Cache hit — succeeded result inline, no new run
+HTTP 200
+{ "jobId": "...", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true }
+```
+
+Always check the HTTP status (`200` vs `202`) and the optional `fromCache` / `dedup` flags before deciding whether to start polling.
+
+## Polling
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
+```
+
+Poll every 2–5 seconds. Status flows: `queued` → `running` → `succeeded` | `failed`.
+
+```jsonc
+// running
+{ "jobId": "...", "kind": "intelligence_discover", "status": "running",
+  "submittedAt": 1745859300000, "startedAt": 1745859302100 }
+
+// succeeded
+{ "jobId": "...", "kind": "intelligence_discover", "status": "succeeded",
+  "submittedAt": 1745859300000, "startedAt": 1745859302100, "completedAt": 1745859315400,
+  "result": { /* QueryNarrativeDiscoveryResponse — see API reference */ } }
+
+// failed
+{ "jobId": "...", "status": "failed",
+  "error": "embedding service failed (403): permission denied",
+  "submittedAt": ..., "startedAt": ..., "completedAt": ... }
+```
+
+Status response codes:
+
+| Status | Body |
+|---|---|
+| `200` | Any job state (`queued` / `running` / `succeeded` / `failed`) |
+| `404` | `{ "error": "job not found" }` — wrong `jobId` |
+| `410` | `{ "error": "job result expired" }` — job is older than its TTL (~24 h after completion) |
+
+## Cache semantics
+
+Submit computes `inputHash = sha256(canonicalJson({ kind, input }))` and checks for a recent successful job with the same hash. If one exists within the per-kind freshness window above, the cached result is returned inline (status `200`, `fromCache: true`).
+
+**To bypass the cache** on a single call, set `input.debug: true`:
+
+```json
+{
+  "kind": "intelligence_discover",
+  "input": { "query": "smart watch launch", "...": "...", "debug": true }
+}
+```
+
+This forces a fresh worker run regardless of cache state. Use it sparingly — heavy kinds are expensive.
+
+## Dedup semantics
+
+Two **concurrent** identical submits will both hit the dedup check. The first creates a row and enqueues; the second observes the `queued`/`running` row and returns the same `jobId` with `dedup: true`. No second SQS message is sent — both pollers converge on the same result.
+
+There's a small race window where two submits arriving in the same millisecond can both miss the dedup check and both queue. In that case both jobs run independently and produce identical results — the cost is duplicate work, not data corruption. This is documented as a v1 accepted trade-off.
+
+## Large results
+
+When a job's result exceeds 300 KB, the worker writes it to S3 and stores a pointer in DynamoDB. The status endpoint rehydrates transparently — your client sees the full result inline either way.
+
+If the S3 write fails, the worker writes a truncated preview envelope to DynamoDB and logs the spill failure server-side. This is rare; surface as `result.__truncated: true` in your client if you want defensive handling.
+
+## TTL
+
+Job rows are deleted from DynamoDB ~24 hours after completion. After that, `GET /intelligence/jobs/{id}` returns `410 { "error": "job result expired" }`. Persist anything you need long-term on your side.
+
+## Using the MCP instead
+
+If polling-loop boilerplate is a pain — especially inside an AI coding agent — install the `kinetk` MCP server. It exposes three tools that wrap the same flow:
+
+- `create_context_job` → `POST /intelligence/jobs` (handles cache hit, dedup, retries)
+- `get_context_job_status` → cheap poll
+- `get_context_job_result` → slim or verbose envelope
+
+See [MCP Installation](../mcp/installation.mdx).

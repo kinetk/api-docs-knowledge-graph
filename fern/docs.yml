@@ -1,0 +1,69 @@
+instances:
+  - url: kinetk.docs.buildwithfern.com
+
+title: KINETK Graph Service API
+
+tabs:
+  docs:
+    display-name: Documentation
+    icon: book
+  api:
+    display-name: API Reference
+    icon: code
+
+navigation:
+  - tab: docs
+    layout:
+      - section: Get Started
+        contents:
+          - page: Introduction
+            path: ./pages/introduction.mdx
+          - page: Authentication
+            path: ./pages/getting-started/authentication.mdx
+          - page: Quickstart
+            path: ./pages/getting-started/quickstart.mdx
+      - section: Guides
+        contents:
+          - page: Narrative Intelligence
+            path: ./pages/guides/narrative-intelligence.mdx
+          - page: Intelligence Jobs
+            path: ./pages/guides/intelligence-jobs.mdx
+          - page: Sync & Freshness
+            path: ./pages/guides/sync-and-freshness.mdx
+      - section: MCP Server
+        contents:
+          - page: Overview
+            path: ./pages/mcp/overview.mdx
+          - page: Installation
+            path: ./pages/mcp/installation.mdx
+          - page: Tools
+            path: ./pages/mcp/tools.mdx
+  - tab: api
+    layout:
+      - api: API Reference
+
+colors:
+  accent-primary:
+    light: "#1A8A9C"  # darker teal — meets WCAG contrast on white
+    dark: "#26AEC0"   # primary brand teal — works on black
+  background:
+    light: "#FFFFFF"
+    dark: "#000000"
+
+# Custom fonts (Inter for body, Bebas Neue for headings — matches kinetk.ai).
+# Re-enable once WOFF2 files are added under ./assets/fonts/.
+# typography:
+#   bodyFont:
+#     name: Inter
+#     path: ./assets/fonts/Inter-Regular.woff2
+#   headingsFont:
+#     name: Bebas Neue
+#     path: ./assets/fonts/BebasNeue-Regular.woff2
+
+logo:
+  href: https://kinetk.ai
+
+navbar-links:
+  - type: minimal
+    text: kinetk.ai
+    url: https://kinetk.ai

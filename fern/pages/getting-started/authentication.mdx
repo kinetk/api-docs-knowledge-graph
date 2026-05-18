@@ -1,0 +1,29 @@
+---
+title: Authentication
+description: API-key authentication via the x-api-key header.
+---
+
+Every endpoint requires an API key sent in the `x-api-key` header.
+
+```bash
+curl -H "x-api-key: $API_KEY" "https://api.kinetk.ai/graph/health"
+```
+
+## Getting a key
+
+API keys are issued per-customer. To request one, contact the KINETK team at **api@kinetk.ai** (or your existing point of contact).
+
+Each key is bound to a usage plan with per-second and per-day rate limits — defaults are generous for development and tunable for production traffic.
+
+## Failure modes
+
+| Status | Body | Cause |
+|---|---|---|
+| `403` | `{ "message": "Forbidden" }` | Missing or invalid `x-api-key`. Double-check the header name (case-insensitive) and that the value matches your issued key. |
+| `429` | `{ "message": "Too Many Requests" }` | Per-second or per-day quota exceeded. Back off; if you need a higher limit, contact us. |
+
+## Best practices
+
+- **Store keys in env vars or a secret manager**, never in committed code. The MCP server reads `GRAPH_SERVICE_API_KEY` from its environment — see [MCP Installation](../mcp/installation.mdx).
+- **Use separate keys per environment.** Dev keys hit `api.dev.kinetk.ai`; prod keys hit `api.kinetk.ai`. Mixing them silently 403s.
+- **Rotate keys when team members leave** or after any suspected exposure. Contact us to revoke + re-issue.

@@ -1,0 +1,56 @@
+---
+title: MCP Overview
+description: What the kinetk MCP server exposes and when to use it.
+---
+
+The **`kinetk` MCP server** is a [Model Context Protocol](https://modelcontextprotocol.io) server that wraps the heavy KINETK async-job API as agent-friendly tools. AI clients (Claude, Cursor, Gemini CLI, Windsurf, …) launch it as a subprocess and call its tools over JSON-RPC — your prompt mentions `kinetk` and the LLM submits real retrieval jobs, polls them, and gets back token-efficient response envelopes.
+
+Source code lives in [`mcp-server/`](https://github.com/kinetk/api-docs-knowledge-graph/tree/main/mcp-server) in this repo. Installation: [Installation](./installation.mdx). Per-tool reference: [Tools](./tools.mdx).
+
+## What the MCP exposes
+
+Three tools that map to the async job lifecycle:
+
+| Tool | Purpose |
+|---|---|
+| `create_context_job` | Submit any of the four `kind`s. Returns `{ jobId, kind, status, fromCache }`. |
+| `get_context_job_status` | Cheap poll. Returns `{ jobId, kind, status, submittedAt, startedAt, completedAt, error? }`. |
+| `get_context_job_result` | Fetch the result. Defaults to a **slim envelope** (token-efficient); `verbose: true` returns the full graph-service payload. |
+
+Underneath, these talk HTTPS to the deployed [Graph Service](https://api.kinetk.ai/graph) via `POST /intelligence/jobs` and `GET /intelligence/jobs/{id}`. The MCP itself is stateless — all retrieval state lives in the backend.
+
+## When to use the MCP vs the raw API
+
+| Use case | Pick |
+|---|---|
+| You're using Claude Code, Cursor, Gemini CLI, Windsurf, or Claude Desktop and want the agent to fetch context for you | **MCP** |
+| You're prototyping an agent loop that orchestrates multiple intelligence queries | **MCP** |
+| You're building a backend service, scheduled job, or dashboard | **Raw API** |
+| You need an endpoint the MCP doesn't expose (e.g. `/narratives/trending`, `/health`) | **Raw API** |
+
+The MCP intentionally surfaces only the async `intelligence/jobs` flow. Precomputed narrative reads (`/narratives/*`), `/health`, and `/creators/{id}` are direct sync reads — there's no agent benefit to wrapping them, so they live only in the [API Reference](/api-reference).
+
+## Why a slim envelope?
+
+`intelligence_discover` results can be 100s of KB — full vectors, every content row, every analytics breakdown. AI agents pay per token, so by default the MCP returns:
+
+- Per-content: `id`, `platform`, `title`, `tags`, `similarity`, `engagement`, `creator`.
+- The narrative + tag + creator graphs (for `intelligence_discover`).
+- The LLM insights (for `intelligence_discover`).
+
+Skipped by default: raw vectors, full retrieval diagnostics, debug breakdowns. Pass `verbose: true` to `get_context_job_result` to get the untouched payload.
+
+## Prompting tips
+
+The LLM doesn't know to use the MCP unless you cue it. Two patterns work:
+
+1. **Name the MCP**: "Use **kinetk** to find trending content about luxury watches in the last 7 days."
+2. **Name the kind**: "Submit an `intelligence_discover` job via kinetk for `luxury watch culture 2026`."
+
+Without one of these cues, Claude/Cursor will answer from general knowledge and skip the MCP entirely — costing you nothing but giving you no real intelligence.
+
+## Transport
+
+The MCP currently speaks **stdio** only. Clients launch `kinetk-mcp` as a subprocess and exchange JSON-RPC frames on its stdin/stdout. Stdout is reserved for protocol frames; any logs the server emits go to stderr.
+
+HTTP/SSE transport is planned for v2 (would unlock ChatGPT Connectors and remote use cases). Today, see [Installation](./installation.mdx) for the supported clients.

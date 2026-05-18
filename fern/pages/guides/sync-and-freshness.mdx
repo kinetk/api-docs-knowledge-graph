@@ -1,0 +1,38 @@
+---
+title: Sync & Freshness
+description: How data lands in the Graph Service and what "fresh" means.
+---
+
+The Graph Service is read-heavy: you query it; you don't push to it. Underneath, an hourly ingestion pipeline pulls new and updated content records from upstream scanning systems into the canonical Postgres store. This page explains the data-freshness guarantees and how to monitor them.
+
+## Freshness signal: `GET /health`
+
+The fastest way to check data freshness:
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/health"
+```
+
+```json
+{
+  "ok": true,
+  "lastSyncedAt": "2026-04-28T17:32:11.000Z",
+  "syncFreshSeconds": 1432
+}
+```
+
+`lastSyncedAt` is the ISO timestamp of the last successful ingestion run. `syncFreshSeconds` is how long ago that was.
+
+
+## Window filtering
+
+Most endpoints accept a `window` parameter to restrict results by `published_at`:
+
+| Value | Meaning |
+|---|---|
+| `24h` | Last 24 hours |
+| `7d` | Last 7 days |
+| `30d` | Last 30 days |
+| `all` | No time filter (default for live retrieval endpoints) |
+
+Precomputed narrative endpoints only support `24h | 7d | 30d`. The `all` window exists because most ingested content has older `published_at` values and a 7-day cutoff was filtering nearly all matches — override only when you specifically want fresh content.

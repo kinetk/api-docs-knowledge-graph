@@ -1,0 +1,60 @@
+---
+title: Introduction
+description: Public HTTP API and MCP server for the KINETK Knowledge Graph.
+---
+
+The **KINETK Graph Service API** is the public surface of the KINETK Knowledge Graph — a multimodal content intelligence platform that retrieves, clusters, and explains social-media narratives across TikTok, Instagram, YouTube, Reddit, Pinterest, X, and more.
+
+This site documents two ways to use it:
+
+- **HTTP API** — REST endpoints behind an API key. Best for backends, dashboards, and scheduled jobs.
+- **MCP server** — a Model Context Protocol server (`kinetk-mcp`) that wraps the heavy async endpoints as agent-friendly tools. Best for Claude, Cursor, Gemini CLI, and other AI coding/research agents.
+
+Both share the same backend, the same auth model, and the same caching/freshness guarantees.
+
+## What you can do
+
+| Capability | API path | Async? |
+|---|---|---|
+| Liveness + sync-freshness probe | `GET /health` | sync |
+| Precomputed trending narratives | `GET /narratives/trending` | sync |
+| Filtered narrative search | `GET /narratives/search` | sync |
+| One narrative with content + creators + breakdown | `GET /narratives/{id}` | sync |
+| One creator with stats + recent content | `GET /creators/{id}` | sync |
+| Heavy retrieval: `intelligence_search`, `intelligence_discover`, `campaign_brief`, `llm_context` | `POST /intelligence/jobs` + `GET /intelligence/jobs/{id}` | async |
+
+The async path solves the API Gateway 29-second ceiling: submit returns immediately with a `jobId`, then poll until `status: succeeded`. Identical inputs within a per-kind freshness window are served from cache. See [Intelligence Jobs](./guides/intelligence-jobs.mdx) for the full lifecycle.
+
+## When to use the API vs the MCP
+
+| Use case | Recommended path |
+|---|---|
+| You're building a backend service or dashboard | HTTP API directly |
+| You're scripting a one-shot ETL or backfill | HTTP API directly |
+| You're working in Claude / Cursor / Gemini CLI and want the AI to fetch context | MCP server |
+| You're prototyping an agent that orchestrates queries | MCP server |
+
+The MCP doesn't expose every endpoint — it surfaces a curated set of three intent-shaped tools (`create_context_job` / `get_context_job_status` / `get_context_job_result`) that map to the async `/intelligence/jobs` flow. Direct HTTP gives you everything; MCP gives you the most useful subset with token-efficient response envelopes.
+
+## Base URL
+
+The production API is served at:
+
+```
+https://api.kinetk.ai/graph
+```
+
+Every endpoint requires an `x-api-key` header. We recommend exporting both as env vars so the examples elsewhere in these docs work directly:
+
+```bash
+export API_BASE="https://api.kinetk.ai/graph"
+export API_KEY="<your key>"
+```
+
+The MCP server uses the same values via `GRAPH_SERVICE_URL` and `GRAPH_SERVICE_API_KEY` — see [MCP Installation](./mcp/installation.mdx).
+
+## Get started
+
+1. [Authentication](./getting-started/authentication.mdx) — get an API key.
+2. [Quickstart](./getting-started/quickstart.mdx) — `curl` your first request.
+3. [MCP installation](./mcp/installation.mdx) — connect Claude/Cursor/Gemini to the server.

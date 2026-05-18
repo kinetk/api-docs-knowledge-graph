@@ -1,0 +1,135 @@
+---
+title: MCP Tools
+description: The three tools exposed by kinetk-mcp — signatures, inputs, examples.
+---
+
+The `kinetk` MCP exposes three tools that map to the async-job lifecycle.
+
+## `create_context_job`
+
+Submit an async job. Pick `kind` based on the analysis depth you want:
+
+| `kind` | Output |
+|---|---|
+| `intelligence_search` | Ranked content with vector similarity + Postgres metadata. |
+| `intelligence_discover` | Search + narratives + tag/creator analytics + LLM insights. |
+| `campaign_brief` | Persisted LLM-generated campaign brief (heavier). |
+| `llm_context` | Ephemeral LLM-ready campaign context bundle. |
+
+### Input
+
+- `intelligence_search` and `intelligence_discover` require `query` (string).
+- `campaign_brief` and `llm_context` require `campaign` (string — the campaign name).
+
+Common filters (work across all kinds):
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `platforms` | `string[]` | all | E.g. `["TIKTOK", "INSTAGRAM"]` |
+| `window` | `"24h" \| "7d" \| "30d" \| "all"` | `"all"` | Time filter on `published_at` |
+| `topK` | `number` | 1000 | Maps to backend `limit`. Capped client-side at 1000 to keep agent payloads bounded. |
+| `expandQuery` | `boolean` | false | Opt in to LLM-backed query expansion (search/discover only) |
+| `vectors` | `"all_media" \| "image" \| "video"` | `"all_media"` | Which target vectors the vector search fans out to |
+| `debug` | `boolean` | false | Bypass cache + dedup. Use sparingly. |
+
+### Returns
+
+```json
+{
+  "jobId": "0190bd6f-1234-7abc-8def-9876543210ab",
+  "kind": "intelligence_discover",
+  "status": "queued",
+  "fromCache": false
+}
+```
+
+If the backend has a fresh cached run for this input, `status` is `succeeded` and `fromCache: true` — `get_context_job_result` returns in O(1) on the next call.
+
+### Example agent prompt
+
+> Use kinetk to submit an `intelligence_discover` job for `luxury watch culture 2026` on TikTok and Instagram over the last 30 days.
+
+## `get_context_job_status`
+
+Cheap poll. Pass the `jobId` you got from `create_context_job`.
+
+### Returns
+
+```jsonc
+// running
+{ "jobId": "...", "kind": "intelligence_discover", "status": "running",
+  "submittedAt": 1745859300000, "startedAt": 1745859302100 }
+
+// completed
+{ "jobId": "...", "kind": "intelligence_discover", "status": "completed",
+  "submittedAt": ..., "startedAt": ..., "completedAt": 1745859315400 }
+
+// failed
+{ "jobId": "...", "status": "failed",
+  "error": "embedding service failed (403): permission denied",
+  "submittedAt": ..., "startedAt": ..., "completedAt": ... }
+```
+
+Status values: `queued | running | completed | failed`. Latency: ~300 ms — safe to poll every 2–5 seconds.
+
+## `get_context_job_result`
+
+Fetch the result. Defaults to the **slim envelope** (token-efficient).
+
+### Inputs
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `jobId` | string | (required) | From `create_context_job` |
+| `verbose` | boolean | `false` | If `true`, returns the full untouched graph-service payload |
+
+### Returns (slim envelope)
+
+```jsonc
+{
+  "content": [
+    {
+      "id": "uuid",
+      "platform": "TIKTOK",
+      "title": "...",
+      "tags": ["smartwatch", "fitness"],
+      "similarity": 0.81,
+      "engagement": 12500,
+      "creator": { "id": 42, "handle": "fitfam_lisa", "platform": "TIKTOK" }
+    }
+  ],
+  "narratives": [ /* intelligence_discover only */ ],
+  "insights": [ /* intelligence_discover only */ ]
+}
+```
+
+Skipped by default: raw vectors, full retrieval diagnostics, debug breakdowns.
+
+### Returns (verbose)
+
+The full `QueryNarrativeDiscoveryResponse` (or `QueryIntelligenceSearchResponse` for `intelligence_search`) — see the [API Reference](/api-reference) for the complete schema.
+
+### Pending behavior
+
+If the job is still `queued` or `running` when called, returns `{ "status": "pending" }` instead of erroring. Useful for agents that want to call `get_context_job_result` directly and back off on pending without a separate status check.
+
+### Expired
+
+If the job's TTL has passed (~24 h after completion), returns the underlying `410` from the API:
+
+```json
+{ "error": "job result expired" }
+```
+
+Resubmit via `create_context_job` to recompute.
+
+## Putting it together
+
+A typical agent loop for `intelligence_discover`:
+
+1. `create_context_job({ kind: "intelligence_discover", input: { query, platforms, window } })` → `jobId`.
+2. If `fromCache: true`, jump to step 4.
+3. `get_context_job_status({ jobId })` every 3 s until `status: "completed"` (or `"failed"`).
+4. `get_context_job_result({ jobId })` → slim envelope. If you need raw vectors, pass `verbose: true`.
+
+Most agents handle this entirely autonomously once you cue them with "use kinetk."

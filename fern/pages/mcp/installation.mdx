@@ -1,0 +1,157 @@
+---
+title: MCP Installation
+description: Install the kinetk MCP server in Claude Code, Claude Desktop, Cursor, Windsurf, Gemini CLI, and ChatGPT.
+---
+
+The `kinetk` MCP runs over **stdio** — clients launch it as a subprocess and speak JSON-RPC on its stdin/stdout. You'll point each client at the built `dist/index.js` and pass two env vars: the API base URL and your API key.
+
+## 1. Get the server
+
+```bash
+git clone https://github.com/kinetk/api-docs-knowledge-graph.git
+cd api-docs-knowledge-graph/mcp-server
+npm install
+npm run build
+cp .env.example .env
+# fill in GRAPH_SERVICE_URL and GRAPH_SERVICE_API_KEY
+```
+
+After build, the entry point is `<repo>/mcp-server/dist/index.js`. Note the absolute path — every client config below needs it.
+
+## 2. Find your `node` binary
+
+The MCP launches as a subprocess via the `node` binary. Clients can't always find it on `PATH`, so use the absolute path:
+
+```bash
+which node
+# e.g. /usr/local/bin/node  or  /opt/homebrew/bin/node
+```
+
+Use this path verbatim in every config below.
+
+## Claude Code (CLI)
+
+One command:
+
+```bash
+claude mcp add kinetk \
+  -e GRAPH_SERVICE_URL=https://api.kinetk.ai/graph \
+  -e GRAPH_SERVICE_API_KEY=<key> \
+  -- /usr/local/bin/node /absolute/path/to/api-docs-knowledge-graph/mcp-server/dist/index.js
+```
+
+Start a new Claude Code session and run `/mcp` — `kinetk` should show as connected with three tools. If anything fails, run `claude --debug` and `/mcp` to see the spawn error.
+
+## Claude Desktop
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "kinetk": {
+      "command": "/usr/local/bin/node",
+      "args": ["/absolute/path/to/api-docs-knowledge-graph/mcp-server/dist/index.js"],
+      "env": {
+        "GRAPH_SERVICE_URL": "https://api.kinetk.ai/graph",
+        "GRAPH_SERVICE_API_KEY": "<key>"
+      }
+    }
+  }
+}
+```
+
+Fully quit and relaunch Claude Desktop. The hammer icon on the prompt bar should show three new tools.
+
+## Cursor
+
+Cursor supports MCP via either a project-scoped file (`.cursor/mcp.json` at the repo root) or a user-scoped one (`~/.cursor/mcp.json`). Both use the same shape:
+
+```json
+{
+  "mcpServers": {
+    "kinetk": {
+      "command": "/usr/local/bin/node",
+      "args": ["/absolute/path/to/api-docs-knowledge-graph/mcp-server/dist/index.js"],
+      "env": {
+        "GRAPH_SERVICE_URL": "https://api.kinetk.ai/graph",
+        "GRAPH_SERVICE_API_KEY": "<key>"
+      }
+    }
+  }
+}
+```
+
+Restart Cursor (or use *Cursor → Settings → MCP → Refresh*). The three tools appear in the Composer / Agent panel.
+
+> **Tip:** drop the file at `.cursor/mcp.json` inside your project repo if you only want the MCP active when working there. Use `~/.cursor/mcp.json` to make it global.
+
+## Windsurf (Codeium)
+
+Edit `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "kinetk": {
+      "command": "/usr/local/bin/node",
+      "args": ["/absolute/path/to/api-docs-knowledge-graph/mcp-server/dist/index.js"],
+      "env": {
+        "GRAPH_SERVICE_URL": "https://api.kinetk.ai/graph",
+        "GRAPH_SERVICE_API_KEY": "<key>"
+      }
+    }
+  }
+}
+```
+
+Open *Windsurf → Settings → Cascade → Plugins / MCP* and click **Refresh**.
+
+## Gemini CLI
+
+Edit `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "kinetk": {
+      "command": "/usr/local/bin/node",
+      "args": ["/absolute/path/to/api-docs-knowledge-graph/mcp-server/dist/index.js"],
+      "env": {
+        "GRAPH_SERVICE_URL": "https://api.kinetk.ai/graph",
+        "GRAPH_SERVICE_API_KEY": "<key>"
+      }
+    }
+  }
+}
+```
+
+Start a new `gemini` session — `/mcp list` shows registered servers, `/tools` lists `create_context_job`, `get_context_job_status`, `get_context_job_result`.
+
+> **Note:** only the **Gemini CLI** (`google-gemini/gemini-cli`) supports custom MCP servers today. Gemini in the web UI / AI Studio does not expose an install path for local stdio MCPs.
+
+## ChatGPT
+
+ChatGPT's MCP support targets **remote** (HTTP/SSE) MCP servers via the Connectors interface — not local stdio. This MCP is stdio-only in v1, so you have two options:
+
+1. **ChatGPT Desktop with developer mode** (where supported): if your ChatGPT Desktop build exposes a local MCP config (some recent builds do — check *Settings → Connectors → "Add local server"*), point it at `/usr/local/bin/node` with the same args/env as the Claude Desktop block above.
+2. **Bridge to remote MCP**: wrap this server with a stdio→HTTP shim (e.g. [`mcp-remote`](https://github.com/geelen/mcp-remote) or [`supergateway`](https://github.com/supercorp-ai/supergateway)) and register the resulting URL as a Connector.
+
+Adding native HTTP/SSE transport is a planned v2 — open a ticket if you need it.
+
+## Verify it's working
+
+Once installed, ask your client something the MCP can answer:
+
+> Use kinetk to find trending content about smartwatches in the last 7 days.
+
+The client should call `create_context_job` with `kind: "intelligence_discover"`, then `get_context_job_status` until succeeded, then `get_context_job_result` for the slim envelope. If it answers from general knowledge instead, you didn't cue the MCP — say `Use kinetk` explicitly.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Client doesn't list `kinetk` | Config path wrong, or JSON malformed | Re-check the config file path; validate JSON with `jq < config.json`. |
+| `spawn ENOENT` | Wrong `node` path | Re-run `which node` and paste the exact path. |
+| `GRAPH_SERVICE_URL is required` | env not passed to subprocess | Confirm the `env` block is on the MCP entry, not at the top level. |
+| `403 Forbidden` on every tool call | Wrong or missing API key | Re-paste `GRAPH_SERVICE_API_KEY`. Dev keys hit `api.dev.kinetk.ai`; prod keys hit `api.kinetk.ai`. |

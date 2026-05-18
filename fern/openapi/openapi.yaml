@@ -1,0 +1,1673 @@
+openapi: 3.0.3
+info:
+  title: KINETK Graph Service API
+  version: 1.0.0
+  description: |
+    Public HTTP API for the KINETK graph-service.
+
+    **What's exposed:**
+    - **Health & sync**: liveness probe + DynamoDB→Aurora ingestion freshness.
+    - **Narrative intelligence**: precomputed narrative-cluster reads for trending/search/detail.
+    - **Intelligence jobs (async-only)**: SQS-driven worker for all heavy intelligence work — `POST /intelligence/jobs` to submit, `GET /intelligence/jobs/{id}` to poll. Supported kinds: `intelligence_search`, `intelligence_discover`, `campaign_brief`, `llm_context`.
+
+    All endpoints require the API Gateway `x-api-key` header.
+  contact:
+    name: KINETK Engineering
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.kinetk.ai/graph
+    description: |
+      Production custom domain. Routes through CloudFront / Route 53 to the
+      prod API Gateway. Use this for everything except local debugging.
+  - url: https://{apiId}.execute-api.us-east-1.amazonaws.com/{stage}
+    description: |
+      Direct API Gateway invoke URL — bypasses the custom domain. Useful for
+      smoke-testing a freshly deployed dev/prod stack before DNS catches up.
+      The `apiId` is printed by `serverless deploy`.
+    variables:
+      apiId:
+        default: example
+        description: API Gateway REST API id (e.g. abc123def from the deploy output).
+      stage:
+        default: prod
+        enum: [dev, prod]
+# All endpoints require the API Gateway API key; applied globally so individual
+# operations don't have to repeat it. Fetch the key value with:
+#   aws apigateway get-api-keys --include-values --profile kinetk-prod \
+#     | jq '.items[] | select(.name | contains("kinetk-graph-service-prod"))'
+security:
+  - ApiKeyAuth: []
+paths:
+  /health:
+    get:
+      summary: Health + sync-freshness probe
+      description: |
+        **What it does:** confirms the Lambda can reach Aurora and reports how
+        long since the hourly DynamoDB → Aurora sync last ran successfully.
+
+        **When to use:** uptime monitors, smoke tests after deploy, dashboard
+        status badges. Don't poll faster than once per minute — Aurora hits add up.
+
+        **Returns:** `status: ok | error`, `db.status`, `sync.lastRunAt`,
+        `sync.minutesSinceLastRun`, `sync.isStale` (true when sync is >2h late).
+
+        **Gotchas:**
+        - Returns `503` (not `200 + status:error`) when Aurora is unreachable, so
+          health-checkers can rely on the HTTP code alone.
+        - `sync.isStale: true` does NOT fail the check — it's a warning. The
+          DynamoDB sync alarms in CloudWatch are the source of truth for sync health.
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Service is degraded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /narratives/trending:
+    get:
+      summary: Top precomputed narratives for a window
+      description: |
+        **What it does:** reads the `narrative_clusters` table populated by the
+        scheduled `narrativeClusterJob` (every 6 h) and returns the top
+        narratives ranked by `trendScore` for one of three precomputed windows.
+
+        **When to use:** dashboard top-cards / "what's hot right now" views.
+        Fast (<2 s), cheap, no embedding or vector-search calls — pure Postgres read.
+
+        **Returns:** `narratives[]` ordered by `trendScore` desc. Each entry has
+        `id`, `label`, `summary`, score breakdown (`trendScore`,
+        `momentumScore`, `emergingScore`), `topTags`, `contentCount`,
+        `creatorCount`, `totalEngagement`.
+
+        **Gotchas:**
+        - **Precomputed windows only**: `24h | 7d | 30d`. Requests for `all` are
+          coerced to `7d` (no precomputed `all` cluster exists).
+        - Empty `narratives[]` means the scheduled job hasn't populated the
+          table for that window yet. Trigger manually:
+          `npx serverless invoke --stage prod --aws-profile kinetk-prod --function narrativeClusterJob`.
+        - For query-time / live-retrieval narratives, submit
+          `POST /intelligence/jobs` with `kind: intelligence_discover` instead.
+      operationId: listTrendingNarratives
+      parameters:
+        - $ref: "#/components/parameters/Window"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Trending narratives for the requested window
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [window, narratives]
+                properties:
+                  window:
+                    $ref: "#/components/schemas/NarrativeWindow"
+                  narratives:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/NarrativeCluster"
+        default:
+          $ref: "#/components/responses/Error"
+  /narratives/search:
+    get:
+      summary: Filtered search over precomputed narratives
+      description: |
+        **What it does:** searches the `narrative_clusters` table by free-text
+        query against narrative labels, summaries, and top tags. Returns
+        matching clusters scored by text relevance + cluster strength.
+
+        **When to use:** dashboard narrative search bar. "Show me clusters that
+        match `smartwatch fitness`" — fast Postgres FTS.
+
+        **Returns:** `query`, `window`, `narratives[]` — same shape as
+        `/narratives/trending`, ordered by relevance not trend.
+
+        **Gotchas:**
+        - Same precomputed-window constraint as `/trending` (24h/7d/30d only).
+        - Returns empty when no precomputed cluster matches; for live retrieval
+          (vector + Postgres lookup) submit `POST /intelligence/jobs` with
+          `kind: intelligence_discover`.
+        - The `q` param is required; missing → `400`.
+      operationId: searchNarratives
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - $ref: "#/components/parameters/Window"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Narratives matching the search query
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [query, window, narratives]
+                properties:
+                  query:
+                    type: string
+                  window:
+                    $ref: "#/components/schemas/NarrativeWindow"
+                  narratives:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/NarrativeCluster"
+        "400":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+  /narratives/{id}:
+    get:
+      summary: Drill into one precomputed narrative
+      description: |
+        **What it does:** fetches one narrative by id and returns its full
+        evidence set — every content row in the cluster, top creators, per-platform
+        breakdown, and any duplicate groups detected.
+
+        **When to use:** dashboard narrative detail page. Click a card from
+        `/trending` or `/search`, drill in to see the full evidence.
+
+        **Returns:**
+        - `narrative` — the cluster header (label, summary, scores, top tags).
+        - `content[]` — every content row in the cluster with engagement counts.
+        - `creators[]` — top creators in the cluster with content counts.
+        - `platformBreakdown[]` — per-platform content + engagement totals.
+        - `duplicateGroups[]` — canonical-uuid groupings (empty until duplicate
+          detection is enabled).
+
+        **Gotchas:**
+        - `id` is the integer cluster id from `/trending` or `/search`, not a UUID.
+        - `404` if the id doesn't exist (or has been swept by a re-cluster job).
+      operationId: getNarrativeDetail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Narrative detail with supporting evidence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NarrativeDetailResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+  /creators/{id}:
+    get:
+      summary: Drill into one creator
+      description: |
+        **What it does:** fetches one creator by numeric `id` (the `creators`
+        table primary key) and returns their profile.
+
+        **When to use:** drill-down from any `creatorGraph` node returned by
+        `kind: intelligence_discover` (creator nodes carry the same numeric
+        `creatorId`). Also useful for resolving creators referenced in
+        `narratives[].representativeContent` or `creators[]` summaries.
+
+        **Returns:**
+        - `creator` — profile from the `creators` table: `platform`, `handle`,
+          `display_name`, `follower_count`, `following_count`, `total_likes`,
+          `video_count`, `is_verified`, `is_private`, `updated_at`.
+
+        **Gotchas:**
+        - `id` is the integer `creators.id` value, NOT the synthetic
+          `creator:platform:handle` graph node id. Read it from
+          `creatorGraph.nodes[].creatorId` or `creators[].creatorId`.
+        - `404` when the id is unknown or has been swept.
+      operationId: getCreatorDetail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Creator profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatorDetailResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+  /intelligence/jobs:
+    post:
+      summary: Submit an async intelligence job (any heavy kind)
+      description: |
+        **What it does:** the single entry point for all heavy intelligence
+        work. Validates the request, hashes the input, checks for duplicate /
+        cached jobs, otherwise creates a DDB row + enqueues an SQS message for
+        the worker. Returns `jobId` immediately for polling via
+        `GET /intelligence/jobs/{id}`.
+
+        **When to use:** any caller running multimodal retrieval, narrative
+        discovery, campaign briefs, or LLM-context bundles. The submit Lambda
+        is fast (<500 ms) and does not run pipeline work itself; the worker
+        has a 5-minute timeout and uses S3 spillover for large results.
+
+        **Discriminated request body:** `{ kind, input }` where `input` shape
+        depends on `kind`:
+        - `intelligence_search` → input is `QueryIntelligenceRequest`
+        - `intelligence_discover` → input is `QueryIntelligenceRequest`
+        - `campaign_brief` → input is `CampaignBriefRequest`
+        - `llm_context` → input is `CampaignBriefRequest`
+
+        See the request-body schema below for the per-`kind` variants.
+
+        **Three response shapes:**
+        - `200 + { fromCache: true, result }` — identical recent successful
+          job within the per-kind freshness window; cached result inline.
+        - `202 + { dedup: true }` — identical job currently queued or running;
+          same `jobId`, no new work scheduled.
+        - `202` — new job accepted; poll `GET /intelligence/jobs/{id}`.
+
+        **Per-kind freshness windows** for the cache lookup:
+        - `intelligence_search` — 15 minutes
+        - `intelligence_discover` — 1 hour
+        - `campaign_brief` / `llm_context` — 6 hours
+
+        **Bypass dedup + cache:** set `input.debug: true` on the request body.
+
+        **Gotchas:**
+        - The `inputHash` is computed over the canonical-JSON of `{kind, input}`.
+          Reordering object keys does not change the hash; whitespace doesn't
+          matter; but adding a new field DOES — so `{query: "x"}` and
+          `{query: "x", limit: 60}` are different jobs.
+        - Submit + status Lambdas currently sit inside the provider VPC (1–3 s
+          cold start). Documented as future cleanup — moving them out shaves
+          poll latency.
+      operationId: submitIntelligenceJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobSubmitRequest"
+      responses:
+        "200":
+          description: Cached result returned synchronously
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobSubmitCacheHitResponse"
+        "202":
+          description: Job accepted (queued or deduplicated against a running job)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobSubmitAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+  /intelligence/jobs/{id}:
+    get:
+      summary: Poll an async job — status + final result
+      description: |
+        **What it does:** reads the job row from DynamoDB and returns its
+        current state. Once `status: succeeded`, `result` carries the per-kind
+        payload (see the schema table below). Once `status: failed`, `error`
+        carries the failure reason. If the worker spilled the result to S3
+        (>300 KB), this handler **transparently rehydrates** the full payload —
+        callers never see the spillover.
+
+        **When to use:** poll this after `POST /intelligence/jobs` returns a
+        `jobId` and `status: queued`. Recommended cadence: every 2–5 seconds.
+        Typical worker run: 5–20 s end-to-end.
+
+        **Returns:**
+        - Always: `jobId`, `kind`, `status`, `submittedAt`.
+        - When `status: running` or beyond: `startedAt`.
+        - When `status: succeeded`: `completedAt`, `result` (per-kind shape).
+        - When `status: failed`: `completedAt`, `error` (human-readable string).
+
+        **Per-kind result shapes:**
+        - `intelligence_search` → IntelligenceSearchResponse
+        - `intelligence_discover` → QueryNarrativeDiscoveryResponse
+        - `campaign_brief` → CampaignBriefResponse (includes saved `id`)
+        - `llm_context` → LlmContextResponse
+
+        **Status codes:**
+        - `200` — job state returned (regardless of status — `queued`,
+          `running`, `succeeded`, and `failed` are all 200s with the state in
+          the body).
+        - `404` — `jobId` not found in DynamoDB.
+        - `410` — job result expired (row TTL'd ~24 h after completion).
+          Re-submit to recompute.
+
+        **Gotchas:**
+        - Job rows TTL ~24 h after completion. The DDB TTL sweep is async
+          (24–48 h drift), but this handler explicitly checks `ttl < now()`
+          and returns `410` even if the row is still queryable.
+        - S3 spillover objects live for 7 days (lifecycle rule); plenty of
+          buffer past the row TTL for ops review.
+      operationId: getIntelligenceJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: |
+        AWS API Gateway API key. The same value gates every endpoint in this
+        spec. Find the key value via:
+        `aws apigateway get-api-keys --include-values --profile kinetk-prod | jq '.items[] | select(.name | contains("kinetk-graph-service-prod"))'`.
+        Missing or wrong → `403 Forbidden`.
+  parameters:
+    Window:
+      name: window
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/NarrativeWindow"
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 12
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    NarrativeWindow:
+      type: string
+      enum: [24h, 7d, 30d]
+      default: 7d
+      description: |
+        Bounded time window for **precomputed** narrative endpoints (`/narratives/trending`,
+        `/narratives/search`, `/narratives/{id}`). The `narrative_clusters` table is
+        materialised per 24h/7d/30d bucket, so there is no "all" cluster — requests
+        for "all" are coerced to "7d" by the handler.
+    QueryWindow:
+      type: string
+      enum: [24h, 7d, 30d, all]
+      default: all
+      description: |
+        Time window for **live retrieval** jobs (all kinds submitted to
+        `POST /intelligence/jobs`). `all` disables the `published_at` filter
+        entirely; the bounded values keep only content published within the
+        trailing N hours. Default `all` because most scan content has older
+        `published_at` values and a 7d cutoff was filtering out nearly all
+        matches.
+    HealthResponse:
+      type: object
+      required: [status, stage, db, sync, durationMs, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        stage:
+          type: string
+        db:
+          type: string
+          enum: [connected, unreachable]
+        dbError:
+          type: string
+        sync:
+          type: object
+          required: [lastRunAt, minutesSinceLastRun, isStale, lastCycle, today]
+          properties:
+            lastRunAt:
+              type: string
+              nullable: true
+              format: date-time
+            minutesSinceLastRun:
+              type: integer
+              nullable: true
+            isStale:
+              type: boolean
+            lastCycle:
+              # OpenAPI 3.0: an explicit `type: object` is required next to
+              # `nullable: true` for the validator to accept it. The `allOf`
+              # pulls in the SyncStats fields.
+              type: object
+              nullable: true
+              allOf:
+                - $ref: "#/components/schemas/SyncStats"
+            today:
+              nullable: true
+              type: object
+              properties:
+                processedCount:
+                  type: integer
+                insertedCount:
+                  type: integer
+        durationMs:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+    SyncStats:
+      type: object
+      required: [processedCount, insertedCount, durationMs]
+      properties:
+        processedCount:
+          type: integer
+        insertedCount:
+          type: integer
+        durationMs:
+          type: integer
+    NarrativeCluster:
+      type: object
+      required: [id, window_key, label, summary, momentum_score, emerging_score, content_count, creator_count, platform_count, total_engagement, top_tags]
+      properties:
+        id:
+          type: integer
+        window_key:
+          $ref: "#/components/schemas/NarrativeWindow"
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+        label:
+          type: string
+        summary:
+          type: string
+        momentum_score:
+          type: number
+        emerging_score:
+          type: number
+        content_count:
+          type: integer
+        creator_count:
+          type: integer
+        platform_count:
+          type: integer
+        total_engagement:
+          type: integer
+        top_tags:
+          type: array
+          items:
+            type: string
+        representative_content_uuid:
+          type: string
+          nullable: true
+        score_breakdown:
+          type: object
+          additionalProperties: true
+        computed_at:
+          type: string
+          format: date-time
+    NarrativeDetailResponse:
+      type: object
+      required: [narrative, content, creators, platformBreakdown, duplicateGroups]
+      properties:
+        narrative:
+          $ref: "#/components/schemas/NarrativeCluster"
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/NarrativeContentEvidence"
+        creators:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        platformBreakdown:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        duplicateGroups:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    NarrativeContentEvidence:
+      type: object
+      required: [uuid, platform, tags]
+      properties:
+        uuid:
+          type: string
+        platform:
+          type: string
+          nullable: true
+        content_id:
+          type: string
+          nullable: true
+        content_url:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        author_handle:
+          type: string
+          nullable: true
+        view_count:
+          type: integer
+          nullable: true
+        like_count:
+          type: integer
+          nullable: true
+        share_count:
+          type: integer
+          nullable: true
+        comment_count:
+          type: integer
+          nullable: true
+        published_at:
+          type: string
+          nullable: true
+          format: date-time
+        tags:
+          type: array
+          items:
+            type: string
+        relevance_score:
+          type: number
+        is_representative:
+          type: boolean
+    CreatorDetailResponse:
+      type: object
+      required: [creator]
+      properties:
+        creator:
+          $ref: "#/components/schemas/CreatorProfile"
+    CreatorProfile:
+      type: object
+      required: [id, platform, handle]
+      properties:
+        id:
+          type: integer
+          description: Stable `creators.id` PK. Same value carried by `creatorGraph` creator nodes.
+        platform:
+          type: string
+        handle:
+          type: string
+        display_name:
+          type: string
+          nullable: true
+        follower_count:
+          type: integer
+          nullable: true
+        following_count:
+          type: integer
+          nullable: true
+        total_likes:
+          type: integer
+          nullable: true
+        video_count:
+          type: integer
+          nullable: true
+        is_verified:
+          type: boolean
+          nullable: true
+        is_private:
+          type: boolean
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+    QueryIntelligenceRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          description: |
+            Free-text query that drives embedding-based vector-search retrieval.
+            Hashtags inside the query (`#fitness`, `#sleep`) are auto-extracted and used as
+            the tag-overlap widening filter when vector search under-fills the requested limit.
+        platforms:
+          type: array
+          items:
+            type: string
+          description: Optional uppercase platform whitelist (e.g. `["TIKTOK", "INSTAGRAM"]`).
+        vectors:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          description: Use `all_media` (default) or a comma-separated/list value such as `image_vector,video_vector`.
+          default: all_media
+        limit:
+          type: integer
+          minimum: 100
+          maximum: 50000
+          default: 1000
+          description: |
+            Max ranked content rows to return. Clamped to [100, 50000]; callers requesting
+            below 100 are silently clamped to 100. Default `1000` keeps vector-search per-call
+            cost manageable; raise it for higher recall. See `retrieval.tagWidening` in the
+            response for whether Postgres widening was used to fill below-vector under-recall.
+        maxDistance:
+          type: number
+          nullable: true
+        expandQuery:
+          type: boolean
+          default: true
+          description: |
+            When true (default), an LLM generates 3 expanded queries and the vector search fans
+            out across all of them. Set `false` to skip query expansion and only embed the
+            original query. (Previously `false` was silently ignored — fixed in the HTTP
+            validation refactor.)
+        clusterCount:
+          type: integer
+          minimum: 2
+          maximum: 8
+          description: Optional query-time semantic cluster count. Defaults to the demo-style automatic count.
+        window:
+          $ref: "#/components/schemas/QueryWindow"
+        debug:
+          type: boolean
+          default: false
+          description: When true, retrieval includes sampled vector candidates that did not join to Postgres.
+        debugUnmatchedLimit:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 25
+          description: Maximum number of unmatched candidate samples to return when debug is true.
+    IntelligenceSearchResponse:
+      type: object
+      required: [type, generatedAt, query, window, content, graph]
+      properties:
+        type:
+          type: string
+          enum: [kinetk.query_intelligence.search.v1]
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          type: string
+        window:
+          $ref: "#/components/schemas/QueryWindow"
+        expandedQueries:
+          type: array
+          description: |
+            Debug-only. Present only when the request was submitted with
+            `debug: true`. Lists the LLM-expanded query variants used for
+            retrieval fan-out.
+          items:
+            type: string
+        retrieval:
+          allOf:
+            - $ref: "#/components/schemas/QueryRetrieval"
+          description: |
+            Debug-only. Present only when the request was submitted with
+            `debug: true`. Per-target vector counts, fusion stats, and
+            join/filter breakdowns.
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/RankedContent"
+        graph:
+          $ref: "#/components/schemas/QueryGraph"
+    QueryNarrativeDiscoveryResponse:
+      type: object
+      required: [type, generatedAt, query, window, content, narratives, topTags, tagGraph, tagCombinations, tagNarrativeMap, creators, creatorGraph, platformOpportunities, tagSignals, attributeLifts, insights, tagInsights, narrativeInsights, contentGraph, narrativeGraph, graph]
+      properties:
+        type:
+          type: string
+          enum: [kinetk.query_intelligence.narrative_discovery.v1]
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          type: string
+        window:
+          $ref: "#/components/schemas/QueryWindow"
+        expandedQueries:
+          type: array
+          description: |
+            Debug-only. Present only when the request was submitted with
+            `debug: true`. Lists the LLM-expanded query variants used for
+            retrieval fan-out.
+          items:
+            type: string
+        retrieval:
+          allOf:
+            - $ref: "#/components/schemas/QueryRetrieval"
+          description: |
+            Debug-only. Present only when the request was submitted with
+            `debug: true`. Per-target vector counts, fusion stats, and
+            join/filter breakdowns.
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/RankedContent"
+        narratives:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueryNarrative"
+        topTags:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueryTopTag"
+        tagGraph:
+          $ref: "#/components/schemas/QueryGraph"
+        tagCombinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/TagCombination"
+        tagNarrativeMap:
+          type: array
+          items:
+            $ref: "#/components/schemas/TagNarrativeRole"
+        creators:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueryCreator"
+        creatorGraph:
+          $ref: "#/components/schemas/QueryGraph"
+        platformOpportunities:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformOpportunity"
+        tagSignals:
+          type: array
+          description: |
+            Per-tag arbitrage opportunity scores across the full ranked result set.
+            High `opportunityScore` means the tag is concentrated on one platform
+            AND its engagement premium is high relative to the cohort.
+          items:
+            $ref: "#/components/schemas/TagSignal"
+        attributeLifts:
+          type: array
+          description: |
+            Per-narrative tag-level engagement lift. Within each cluster, for
+            every tag with enough sample size on both sides, we compute
+            (avgEngagementWithTag - avgEngagementWithoutTag) / avgEngagementWithoutTag.
+          items:
+            $ref: "#/components/schemas/NarrativeAttributeLift"
+        insights:
+          type: array
+          description: |
+            4–6 LLM-generated, quantified, actionable arbitrage prose lines.
+            Empty when the LLM service is unreachable, the call timed out, or
+            the underlying arbitrage data is empty.
+          items:
+            type: string
+        tagInsights:
+          type: array
+          description: |
+            4–6 LLM-generated tag-level arbitrage prose lines, built from
+            topTags + tagSignals + tagCombinations. Empty when the LLM service
+            is unreachable, the call timed out, or no tag-shaped arbitrage
+            data was available.
+          items:
+            type: string
+        narrativeInsights:
+          type: array
+          description: |
+            4–6 LLM-generated narrative-cluster-level arbitrage prose lines,
+            built from platformOpportunities + attributeLifts. Empty when the
+            LLM service is unreachable, the call timed out, or no
+            narrative-shaped arbitrage data was available.
+          items:
+            type: string
+        contentGraph:
+          $ref: "#/components/schemas/QueryGraph"
+        narrativeGraph:
+          $ref: "#/components/schemas/QueryGraph"
+        graph:
+          $ref: "#/components/schemas/QueryGraph"
+    QueryRetrieval:
+      type: object
+      required: [vectorTargets, candidatesSeen, resultsReturned, mergeMethod, identityMatchedCandidates, matchedCandidates, filteredCandidates, filteredBreakdown, joinedResults, unmatchedCandidates, joinBreakdown, vectorDiagnostics]
+      properties:
+        vectorTargets:
+          type: array
+          items:
+            type: string
+        candidatesSeen:
+          type: integer
+        resultsReturned:
+          type: integer
+        mergeMethod:
+          type: string
+          enum: [reciprocal_rank_fusion]
+        identityMatchedCandidates:
+          type: integer
+          description: Number of fused vector candidates that matched any Postgres row before canonical/window/platform eligibility filters.
+        matchedCandidates:
+          type: integer
+          description: Number of fused vector candidates that joined to an eligible Postgres content row before final ranking and limit trimming.
+        filteredCandidates:
+          type: integer
+          description: Number of identity-matched Postgres rows excluded by canonical, platform, or time-window filters.
+        filteredBreakdown:
+          type: object
+          required: [canonical, platform, window]
+          description: |
+            Per-reason breakdown of `filteredCandidates`. Use this to tell `0 results` apart from
+            `0 fresh results, but data exists` — e.g. `window: 277, canonical: 0, platform: 0`
+            means the requested time window is too narrow for your data.
+          properties:
+            canonical:
+              type: integer
+              description: Rows skipped because they were non-canonical duplicates (`canonical_uuid` was set).
+            platform:
+              type: integer
+              description: Rows skipped because their platform did not match the request's `platforms` filter.
+            window:
+              type: integer
+              description: Rows skipped because their `published_at` was older than the window cutoff.
+        joinedResults:
+          type: integer
+        unmatchedCandidates:
+          type: integer
+          description: Vector candidates that did not match any Postgres identity key.
+        joinBreakdown:
+          type: object
+          required: [uuid, weaviateId, contentPlatformId]
+          properties:
+            uuid:
+              type: integer
+              description: Returned rows joined by vector-store `contentId` matching Postgres `content.uuid`.
+            weaviateId:
+              type: integer
+              description: Returned rows joined by vector-store object id matching Postgres `content.weaviate_id`.
+            contentPlatformId:
+              type: integer
+              description: Returned rows joined by vector-store `contentPlatformId` matching Postgres `content.content_id`.
+        vectorDiagnostics:
+          type: array
+          items:
+            $ref: "#/components/schemas/VectorDiagnostic"
+        unmatchedSamples:
+          type: array
+          description: Debug-only sampled vector candidates that failed to join to an eligible Postgres row.
+          items:
+            $ref: "#/components/schemas/UnmatchedCandidateDebug"
+        tagWidening:
+          type: object
+          description: |
+            Post-vector-search tag-overlap widening. When the vector fan-out + Postgres join under-fills
+            the requested limit, the service surfaces additional canonical content rows whose `tags`
+            overlap with either the hashtags typed into `query` or the top tags from the join results.
+            Diagnostic only — widened rows are merged into `content` and re-scored alongside Phase A.
+          required: [widenTags, source, widenedCount, phaseAContentCount, skipped]
+          properties:
+            widenTags:
+              type: array
+              items:
+                type: string
+              description: Tag tokens actually used as the widening filter (lowercased, deduped).
+            source:
+              type: string
+              enum: [query_hashtags, phase_a_top_tags, none]
+              description: |
+                Where `widenTags` came from. `query_hashtags` = parsed from the query string;
+                `phase_a_top_tags` = top-N by frequency from Phase A's joined content;
+                `none` = widening was skipped (Phase A filled the limit or no tags available).
+            widenedCount:
+              type: integer
+              description: Number of additional rows the widening SQL returned (before re-scoring + final slice).
+            phaseAContentCount:
+              type: integer
+              description: Number of rows Phase A produced before widening — useful for debugging recall.
+            skipped:
+              type: boolean
+              description: True when Phase A already filled the requested limit or no widen tags were available.
+    UnmatchedCandidateDebug:
+      type: object
+      required: [weaviateObjectId, contentId, contentPlatformId, platform, mediaType, sourceUrl, matchedBy, postgresUuid, postgresPlatform, postgresPublishedAt, postgresCanonicalUuid, targetVectors, rrfScore, rawSimilarity, distance, reason]
+      properties:
+        weaviateObjectId:
+          type: string
+          nullable: true
+          description: Vector-store object UUID.
+        contentId:
+          type: string
+          nullable: true
+          description: Vector-store `contentId` candidate used first against Postgres `content.uuid`.
+        contentPlatformId:
+          type: string
+          nullable: true
+          description: Vector-store `contentPlatformId` candidate used against Postgres `content.content_id`.
+        platform:
+          type: string
+          nullable: true
+        mediaType:
+          type: string
+          nullable: true
+        sourceUrl:
+          type: string
+          nullable: true
+        matchedBy:
+          type: string
+          nullable: true
+          enum: [uuid, weaviateId, contentPlatformId]
+        postgresUuid:
+          type: string
+          nullable: true
+        postgresPlatform:
+          type: string
+          nullable: true
+        postgresPublishedAt:
+          type: string
+          nullable: true
+          format: date-time
+        postgresCanonicalUuid:
+          type: string
+          nullable: true
+        targetVectors:
+          type: array
+          items:
+            type: string
+        rrfScore:
+          type: number
+        rawSimilarity:
+          type: number
+        distance:
+          type: number
+          nullable: true
+        reason:
+          type: string
+          enum: [no_postgres_identity_match, postgres_row_filtered_canonical, postgres_row_filtered_platform, postgres_row_filtered_window]
+    VectorDiagnostic:
+      type: object
+      required: [query, targetVector, status, candidatesReturned]
+      properties:
+        query:
+          type: string
+        targetVector:
+          type: string
+        status:
+          type: string
+          enum: [ok, failed]
+        candidatesReturned:
+          type: integer
+        error:
+          type: string
+    RankedContent:
+      type: object
+      required: [uuid, tags, targetVectors, rrfScore, rawSimilarity, similarity, engagementScore, recencyScore, authorReach, engagementDepth, finalScore]
+      properties:
+        uuid:
+          type: string
+        weaviateId:
+          type: string
+          nullable: true
+        platform:
+          type: string
+          nullable: true
+        contentType:
+          type: string
+          nullable: true
+        contentUrl:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        authorHandle:
+          type: string
+          nullable: true
+        authorName:
+          type: string
+          nullable: true
+        creatorId:
+          type: integer
+          nullable: true
+        followerCount:
+          type: integer
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+          format: date-time
+        tags:
+          type: array
+          items:
+            type: string
+        viewCount:
+          type: integer
+        likeCount:
+          type: integer
+        shareCount:
+          type: integer
+        commentCount:
+          type: integer
+        targetVectors:
+          type: array
+          items:
+            type: string
+        rrfScore:
+          type: number
+        rawSimilarity:
+          type: number
+        similarity:
+          type: number
+        engagementScore:
+          type: number
+        recencyScore:
+          type: number
+        authorReach:
+          type: number
+        engagementDepth:
+          type: number
+        finalScore:
+          type: number
+    QueryGraph:
+      type: object
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueryGraphNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueryGraphEdge"
+    QueryGraphNode:
+      type: object
+      required: [id, type, label]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [content, tag, creator, narrative]
+        label:
+          type: string
+        score:
+          type: number
+        creatorId:
+          type: integer
+          description: |
+            Populated only on `type: creator` nodes. Stable `creators.id`
+            primary key — use as the path param for `GET /creators/{id}`
+            and to join against `creators[].creatorId` in the same response.
+            Creator content rows missing a normalized `creator_id` are
+            excluded from the graph entirely, so this field is always set
+            when present.
+    QueryGraphEdge:
+      type: object
+      required: [source, target, type, weight]
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        type:
+          type: string
+          enum: [semantic_similarity, tag_overlap, creator_posted, tagged_with, contains]
+        weight:
+          type: number
+    QueryNarrative:
+      type: object
+      required: [id, label, summary, trendScore, contentCount, creatorCount, platformCount, totalEngagement, topTags, representativeContent, contentUuids, scoreBreakdown]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        summary:
+          type: string
+        trendScore:
+          type: number
+        contentCount:
+          type: integer
+        creatorCount:
+          type: integer
+        platformCount:
+          type: integer
+        totalEngagement:
+          type: integer
+        topTags:
+          type: array
+          items:
+            type: string
+        representativeContent:
+          type: array
+          items:
+            $ref: "#/components/schemas/RankedContent"
+        contentUuids:
+          type: array
+          items:
+            type: string
+        scoreBreakdown:
+          type: object
+          required: [engagementStrength, creatorDiversity, platformSpread, recencyStrength]
+          properties:
+            engagementStrength:
+              type: number
+            creatorDiversity:
+              type: number
+            platformSpread:
+              type: number
+            recencyStrength:
+              type: number
+    QueryTopTag:
+      type: object
+      required: [tag, frequency, avgEngagement, momentumScore]
+      properties:
+        tag:
+          type: string
+        frequency:
+          type: integer
+        avgEngagement:
+          type: number
+        momentumScore:
+          type: number
+        platformCount:
+          type: integer
+        engagementPremiumPct:
+          type: number
+        signalClass:
+          type: string
+          enum: [High Signal, Emerging, Established, Moderate]
+    TagCombination:
+      type: object
+      required: [tagA, tagB, combination, cooccurrence, avgEngagementTogether, avgEngagementA, avgEngagementB, combinationLiftPct]
+      properties:
+        tagA:
+          type: string
+        tagB:
+          type: string
+        combination:
+          type: string
+        cooccurrence:
+          type: integer
+        avgEngagementTogether:
+          type: number
+        avgEngagementA:
+          type: number
+        avgEngagementB:
+          type: number
+        combinationLiftPct:
+          type: number
+    TagNarrativeRole:
+      type: object
+      required: [tag, frequency, dominantNarrativeId, dominantNarrativeLabel, exclusivity, role, platformCount, avgEngagement, engagementPremiumPct]
+      properties:
+        tag:
+          type: string
+        frequency:
+          type: integer
+        dominantNarrativeId:
+          type: string
+        dominantNarrativeLabel:
+          type: string
+        exclusivity:
+          type: number
+        role:
+          type: string
+          enum: [Signature, Bridge, Shared]
+        platformCount:
+          type: integer
+        avgEngagement:
+          type: number
+        engagementPremiumPct:
+          type: number
+    QueryCreator:
+      type: object
+      required: [platform, handle, contentCount, totalEngagement, avgFinalScore, amplifierScore]
+      properties:
+        creatorId:
+          type: integer
+          nullable: true
+        platform:
+          type: string
+        handle:
+          type: string
+        followerCount:
+          type: integer
+          nullable: true
+        contentCount:
+          type: integer
+        totalEngagement:
+          type: integer
+        avgFinalScore:
+          type: number
+        amplifierScore:
+          type: number
+    PlatformOpportunity:
+      type: object
+      required: [narrativeId, narrativeLabel, dominantPlatform, platformDistribution, platformConcentration, avgEngagement, baselineEngagement, engagementPremiumPct, opportunityScore, contentCount, creatorCount, opportunity]
+      description: |
+        Per-narrative platform-arbitrage signal. Computed from the FULL cluster
+        (every row referenced by `narrative.contentUuids`), not just the top-8
+        representative content. High `opportunityScore` flags narratives that
+        engage strongly AND are concentrated on one platform — i.e. there's
+        room to adapt the format for adjacent platforms.
+      properties:
+        narrativeId:
+          type: string
+          description: Matches `QueryNarrative.id`.
+        narrativeLabel:
+          type: string
+          description: LLM-generated narrative label (post-relabeling).
+        dominantPlatform:
+          type: string
+        platformDistribution:
+          type: object
+          additionalProperties:
+            type: number
+          description: Share of cluster content per platform, summing to 1.0.
+        platformConcentration:
+          type: number
+          description: Dominant platform's share (0–1). 1.0 = single-platform cluster.
+        avgEngagement:
+          type: number
+          description: Mean `engagementScore` across the full cluster.
+        baselineEngagement:
+          type: number
+          description: Mean `engagementScore` across all content in this query (the global comparison point).
+        engagementPremiumPct:
+          type: number
+          description: (avgEngagement - baselineEngagement) / baselineEngagement * 100.
+        opportunityScore:
+          type: number
+          description: max(0, engagementPremiumPct/100) * platformConcentration. Sorted descending.
+        contentCount:
+          type: integer
+          description: Number of content rows in the cluster.
+        creatorCount:
+          type: integer
+          description: Distinct `authorHandle` count in the cluster.
+        opportunity:
+          type: string
+          description: |
+            Static fallback prose — one of two strings depending on whether the
+            cluster is single-platform or cross-platform. Real arbitrage prose
+            lives in the response-level `insights` array (LLM-generated).
+    TagSignal:
+      type: object
+      required: [tag, count, dominantPlatform, platformConcentration, platformDistribution, avgEngagement, baselineEngagement, engagementPremiumPct, opportunityScore]
+      description: |
+        Per-tag arbitrage signal. Tags need at least 3 occurrences in the
+        ranked result set to be reported. `opportunityScore` = engagement
+        premium normalized 0–1 across the surviving cohort, multiplied by
+        platform concentration. Sorted descending in the response.
+      properties:
+        tag:
+          type: string
+          description: Lowercase, trimmed.
+        count:
+          type: integer
+          description: Number of (tag, content) occurrences in the result set.
+        dominantPlatform:
+          type: string
+        platformConcentration:
+          type: number
+          description: Dominant platform's share of this tag's occurrences (0–1).
+        platformDistribution:
+          type: object
+          additionalProperties:
+            type: number
+          description: Share of this tag per platform.
+        avgEngagement:
+          type: number
+        baselineEngagement:
+          type: number
+          description: Global baseline = mean engagementScore across the entire ranked set for this query.
+        engagementPremiumPct:
+          type: number
+        opportunityScore:
+          type: number
+    NarrativeAttributeLift:
+      type: object
+      required: [narrativeId, narrativeLabel, lifts]
+      description: |
+        Per-narrative tag lift. For each tag inside the cluster (when both the
+        with-tag and without-tag groups have ≥3 rows), reports how much higher
+        or lower engagement is when the tag is present vs absent.
+      properties:
+        narrativeId:
+          type: string
+        narrativeLabel:
+          type: string
+          description: LLM label, kept in sync with the relabeled narrative.
+        lifts:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttributeLiftEntry"
+    AttributeLiftEntry:
+      type: object
+      required: [tag, liftPct, countWith, countWithout, avgWith, avgWithout]
+      properties:
+        tag:
+          type: string
+        liftPct:
+          type: number
+          description: (avgWith - avgWithout) / avgWithout * 100. Positive = tag boosts engagement.
+        countWith:
+          type: integer
+          description: Cluster rows that carry this tag.
+        countWithout:
+          type: integer
+          description: Cluster rows that do not carry this tag.
+        avgWith:
+          type: number
+          description: Mean engagementScore among rows carrying this tag.
+        avgWithout:
+          type: number
+          description: Mean engagementScore among rows without this tag.
+    CampaignBriefRequest:
+      type: object
+      required: [campaign]
+      properties:
+        campaign:
+          type: string
+          description: Free-text campaign description; required. Drives the discoverQueryNarratives call internally.
+        audience:
+          type: string
+          description: Free-text audience descriptor (e.g. "fitness-curious millennials"). Carried into the response context for downstream LLM consumption; not used as a retrieval filter.
+        platforms:
+          type: array
+          items:
+            type: string
+        tone:
+          type: string
+          description: Free-text tone hint (e.g. "confident, specific, culturally aware"). Carried into the response context; not used as a retrieval filter.
+        limit:
+          type: integer
+          minimum: 100
+          maximum: 50000
+          default: 1000
+        window:
+          $ref: "#/components/schemas/QueryWindow"
+    CampaignBriefResponse:
+      type: object
+      required: [id, createdAt, brief, context]
+      properties:
+        id:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        brief:
+          $ref: "#/components/schemas/CampaignBrief"
+        context:
+          $ref: "#/components/schemas/CampaignContext"
+    CampaignBrief:
+      type: object
+      additionalProperties: true
+      required: [campaign, positioning, narrativesToRide, emergingNarrativesToTest, topTags, creatorArchetypes, recommendedCreators, platformStrategy, contentAngles, evidence]
+      properties:
+        campaign:
+          type: string
+        positioning:
+          type: array
+          items:
+            type: string
+        narrativesToRide:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        emergingNarrativesToTest:
+          type: array
+          items:
+            type: string
+        topTags:
+          type: array
+          items:
+            type: string
+        creatorArchetypes:
+          type: array
+          items:
+            type: string
+        recommendedCreators:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        platformStrategy:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        contentAngles:
+          type: array
+          items:
+            type: string
+        evidence:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    CampaignContext:
+      type: object
+      additionalProperties: true
+      required: [campaign, input, narratives, topTags, creators, representativeContent, sourceNarrativeIds, sourceContentUuids]
+      properties:
+        campaign:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        narratives:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        topTags:
+          type: array
+          items:
+            type: string
+        creators:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        representativeContent:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        sourceNarrativeIds:
+          type: array
+          items:
+            oneOf:
+              - type: integer
+              - type: string
+        sourceContentUuids:
+          type: array
+          items:
+            type: string
+    JobKind:
+      type: string
+      description: Discriminator for which pipeline runs the job.
+      enum:
+        - intelligence_search
+        - intelligence_discover
+        - campaign_brief
+        - llm_context
+    JobStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - succeeded
+        - failed
+    JobSubmitRequest:
+      description: |
+        Discriminated union by `kind`. Each variant pins `input` to the schema
+        the corresponding pipeline expects (`QueryIntelligenceRequest` for the
+        retrieval kinds, `CampaignBriefRequest` for the campaign kinds).
+
+        Set `input.debug = true` on any variant to bypass dedup + result cache
+        (useful when you want a fresh run after deploying changes).
+      oneOf:
+        - $ref: "#/components/schemas/IntelligenceSearchJobRequest"
+        - $ref: "#/components/schemas/IntelligenceDiscoverJobRequest"
+        - $ref: "#/components/schemas/CampaignBriefJobRequest"
+        - $ref: "#/components/schemas/LlmContextJobRequest"
+      discriminator:
+        propertyName: kind
+        mapping:
+          intelligence_search: "#/components/schemas/IntelligenceSearchJobRequest"
+          intelligence_discover: "#/components/schemas/IntelligenceDiscoverJobRequest"
+          campaign_brief: "#/components/schemas/CampaignBriefJobRequest"
+          llm_context: "#/components/schemas/LlmContextJobRequest"
+    IntelligenceSearchJobRequest:
+      type: object
+      required: [kind, input]
+      description: Live multimodal retrieval — ranked content only.
+      properties:
+        kind:
+          type: string
+          enum: [intelligence_search]
+        input:
+          $ref: "#/components/schemas/QueryIntelligenceRequest"
+    IntelligenceDiscoverJobRequest:
+      type: object
+      required: [kind, input]
+      description: Live retrieval + narratives + LLM analytics + arbitrage signals.
+      properties:
+        kind:
+          type: string
+          enum: [intelligence_discover]
+        input:
+          $ref: "#/components/schemas/QueryIntelligenceRequest"
+    CampaignBriefJobRequest:
+      type: object
+      required: [kind, input]
+      description: Live discovery + persisted campaign brief.
+      properties:
+        kind:
+          type: string
+          enum: [campaign_brief]
+        input:
+          $ref: "#/components/schemas/CampaignBriefRequest"
+    LlmContextJobRequest:
+      type: object
+      required: [kind, input]
+      description: Same evidence bundle as `campaign_brief`, no prose, no save.
+      properties:
+        kind:
+          type: string
+          enum: [llm_context]
+        input:
+          $ref: "#/components/schemas/CampaignBriefRequest"
+    JobSubmitAcceptedResponse:
+      type: object
+      required: [jobId, status, statusUrl]
+      properties:
+        jobId:
+          type: string
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        statusUrl:
+          type: string
+          example: /intelligence/jobs/01931f7e-...
+        dedup:
+          type: boolean
+          description: Present (true) when this jobId was reused for an in-flight identical request.
+    JobSubmitCacheHitResponse:
+      type: object
+      required: [jobId, status, fromCache, result]
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+          enum: [succeeded]
+        fromCache:
+          type: boolean
+        result:
+          description: |
+            Per-kind result payload:
+              - `intelligence_search` → IntelligenceSearchResponse
+              - `intelligence_discover` → QueryNarrativeDiscoveryResponse
+              - `campaign_brief` → CampaignBriefResponse
+              - `llm_context` → LlmContextResponse
+    Job:
+      type: object
+      required: [jobId, kind, status, submittedAt]
+      properties:
+        jobId:
+          type: string
+        kind:
+          $ref: "#/components/schemas/JobKind"
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        submittedAt:
+          type: integer
+          format: int64
+          description: Unix epoch milliseconds when the submit Lambda accepted the job.
+        startedAt:
+          type: integer
+          format: int64
+          description: Unix epoch milliseconds when the worker claimed the job.
+        completedAt:
+          type: integer
+          format: int64
+          description: Unix epoch milliseconds when the worker wrote the terminal result.
+        result:
+          description: |
+            Present once `status: succeeded`. Per-kind payload:
+              - `intelligence_search` → IntelligenceSearchResponse
+              - `intelligence_discover` → QueryNarrativeDiscoveryResponse
+              - `campaign_brief` → CampaignBriefResponse
+              - `llm_context` → LlmContextResponse
+
+            Large results (>300 KB) are spilled to S3 by the worker; the
+            status handler rehydrates them transparently so callers always
+            see the inline payload here.
+        error:
+          type: string
+          description: "Present once `status: failed`. Human-readable failure reason."

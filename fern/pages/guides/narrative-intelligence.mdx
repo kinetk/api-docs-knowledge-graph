@@ -1,0 +1,103 @@
+---
+title: Narrative Intelligence
+description: What "narratives" mean in the Graph Service and how to use them.
+---
+
+A **narrative** in the KINETK Graph is a cluster of related social-media content unified by a shared idea — a topic, framing, or moment. Narratives are computed by combining semantic similarity (multimodal vector embeddings) with tag and creator co-occurrence, then labeled and summarized by an LLM.
+
+There are two ways to access narratives:
+
+- **Precomputed reads** — `/narratives/trending`, `/narratives/search`, `/narratives/{id}`. Sub-second. Refreshed on a 6-hour schedule. Best for dashboards.
+- **Ad-hoc discovery** — `POST /intelligence/jobs` with `kind: "intelligence_discover"`. 5–20 seconds. Runs the full retrieval + clustering + analytics pipeline against a free-text query.
+
+## Precomputed narratives
+
+### Trending
+
+```bash
+curl -H "x-api-key: $API_KEY" \
+  "$API_BASE/narratives/trending?window=7d&limit=12"
+```
+
+Returns the top narrative clusters for the window, ranked by `trendScore` (engagement velocity × content volume × creator diversity). Use this for the "what's hot right now" dashboard panel.
+
+### Search
+
+```bash
+curl -H "x-api-key: $API_KEY" \
+  "$API_BASE/narratives/search?q=smart+watch&window=7d&limit=12"
+```
+
+Filters the precomputed narrative set by free-text match across labels, summaries, and top tags. Same response shape as `/narratives/trending`.
+
+### Detail
+
+```bash
+curl -H "x-api-key: $API_KEY" \
+  "$API_BASE/narratives/123"
+```
+
+Returns one narrative plus its content list, top creators, per-platform breakdown, and any duplicate groups inside the cluster.
+
+## Ad-hoc discovery (async)
+
+When the precomputed set doesn't have what you need — e.g. you want to slice by a custom query, a different time window, or specific platforms — submit an async `intelligence_discover` job:
+
+```bash
+curl -X POST "$API_BASE/intelligence/jobs" \
+  -H "x-api-key: $API_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "kind": "intelligence_discover",
+    "input": {
+      "query": "luxury watch culture 2026",
+      "platforms": ["TIKTOK", "INSTAGRAM"],
+      "limit": 1000,
+      "window": "30d",
+      "topK": 1000
+    }
+  }'
+```
+
+The discover pipeline runs all of the following before returning:
+
+1. **Retrieval** — text embedding → multimodal vector search across image and video vectors → reciprocal rank fusion.
+2. **Eligibility filter** — drops non-canonical duplicates, platform-mismatched rows, and window-misses.
+3. **Tag widening** — if Phase 1 returns fewer than `limit` rows, broadens via Postgres tag-overlap on hashtags from the query or top tags from Phase 1.
+4. **Content scoring** — re-ranks by similarity × engagement × recency × author reach × engagement depth on the merged set.
+5. **Clustering** — cosine KMeans on content vectors (with community-fallback when too few vectors).
+6. **Analytics** — top tags, tag co-occurrence, narrative roles, creator amplifier scores, per-platform opportunities, tag arbitrage signals, attribute lifts.
+7. **LLM augmentation** — an LLM labels each cluster and writes 4–6 quantified arbitrage insight lines.
+
+The response is a single `QueryNarrativeDiscoveryResponse` — see the [API Reference](/api-reference) for the full schema.
+
+## Discovery vs. search
+
+Both `intelligence_search` and `intelligence_discover` start with the same retrieval pipeline. The difference is what they return on top:
+
+| Kind | Returns | Latency | When to use |
+|---|---|---|---|
+| `intelligence_search` | Ranked content + retrieval diagnostics | 5–10 s | You want a list of matching items, no clustering or analytics. |
+| `intelligence_discover` | Search results + narratives + analytics + LLM insights | 10–20 s | You want grouped insight and arbitrage signals, not just items. |
+
+Pick `intelligence_search` if you're feeding a search UI; pick `intelligence_discover` if you're feeding an analyst or agent that wants the "shape" of the conversation.
+
+## Free-text vs. campaign context
+
+The retrieval kinds (`intelligence_search`, `intelligence_discover`) accept a free-text `query`. The campaign-shaped kinds (`campaign_brief`, `llm_context`) accept a structured `campaign` object instead:
+
+```json
+{
+  "kind": "campaign_brief",
+  "input": {
+    "campaign": "smart watch launch",
+    "audience": "health-conscious millennials",
+    "goal": "drive pre-orders",
+    "platforms": ["TikTok", "Instagram"],
+    "tone": "premium but approachable",
+    "window": "30d"
+  }
+}
+```
+
+Both run the same discovery pipeline under the hood; the campaign kinds layer a campaign-context adapter on top and (for `campaign_brief`) persist the result. See the [API Reference](/api-reference) for full input shapes.
