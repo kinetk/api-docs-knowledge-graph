@@ -20,7 +20,8 @@ Both share the same backend, the same auth model, and the same caching/freshness
 | Precomputed trending narratives | `GET /narratives/trending` | sync |
 | Filtered narrative search | `GET /narratives/search` | sync |
 | One narrative with content + creators + breakdown | `GET /narratives/{id}` | sync |
-| One creator with stats + recent content | `GET /creators/{id}` | sync |
+| One creator profile by id | `GET /creators/{id}` | sync |
+| Batch creator lookup (up to 500 ids) | `GET /creators?ids=...` | sync |
 | Heavy retrieval: `intelligence_search`, `intelligence_discover`, `campaign_brief`, `llm_context` | `POST /intelligence/jobs` + `GET /intelligence/jobs/{id}` | async |
 
 The async path solves the API Gateway 29-second ceiling: submit returns immediately with a `jobId`, then poll until `status: succeeded`. Identical inputs within a per-kind freshness window are served from cache. See [Intelligence Jobs](./guides/intelligence-jobs.mdx) for the full lifecycle.

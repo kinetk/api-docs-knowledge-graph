@@ -28,7 +28,7 @@ Underneath, these talk HTTPS to the deployed [Graph Service](https://api.kinetk.
 | You're building a backend service, scheduled job, or dashboard | **Raw API** |
 | You need an endpoint the MCP doesn't expose (e.g. `/narratives/trending`, `/health`) | **Raw API** |
 
-The MCP intentionally surfaces only the async `intelligence/jobs` flow. Precomputed narrative reads (`/narratives/*`), `/health`, and `/creators/{id}` are direct sync reads — there's no agent benefit to wrapping them, so they live only in the [API Reference](/api-reference).
+The MCP intentionally surfaces only the async `intelligence/jobs` flow. Precomputed narrative reads (`/narratives/*`), `/health`, and the creator reads (`/creators/{id}`, `/creators?ids=...`) are direct sync reads — there's no agent benefit to wrapping them, so they live only in the [API Reference](/api-reference).
 
 ## Why a slim envelope?
 
