@@ -63,6 +63,8 @@ colors:
 logo:
   href: https://kinetk.ai
 
+favicon: ./assets/favicon.ico
+
 navbar-links:
   - type: minimal
     text: kinetk.ai
