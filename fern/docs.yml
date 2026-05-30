@@ -1,5 +1,6 @@
 instances:
   - url: kinetk.docs.buildwithfern.com
+    custom-domain: docs.kinetk.ai
 
 title: KINETK Graph Service API
 
