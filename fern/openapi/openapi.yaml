@@ -21,9 +21,6 @@ info:
     `X-Kinetk-Credits-Used` and `X-Kinetk-Credits-Remaining` headers. Precomputed
     narrative/creator reads are free in V1. Cached job answers are charged at the
     full rate (no cache discount).
-
-    Internal engineers: see `openapi-internal.yaml` for the superset spec
-    that documents debug-only request flags and diagnostic response fields.
   contact:
     name: KINETK Engineering
   license:
@@ -261,106 +258,6 @@ paths:
           $ref: "#/components/responses/Error"
         default:
           $ref: "#/components/responses/Error"
-  /playground-data:
-    post:
-      summary: Submit a playground-data job (slim intelligence_discover)
-      description: |
-        Submit the SAME request body as `intelligence_discover`
-        (`{ kind: "intelligence_discover", input }`), then poll
-        `GET /playground-data/{id}` for a slimmed result tailored to the
-        playground UI — only the tag signals + insight prose, none of the heavy
-        narratives / graphs / representative-content arrays that overflow the UI.
-
-        Internally this IS a normal `intelligence_discover` job: identical
-        billing, dedup, freshness window (1 h) and cache as `POST
-        /intelligence/jobs`. Only `intelligence_discover` is accepted — any other
-        `kind` returns `400`. `window` (in `input`) is REQUIRED.
-
-        On a cache hit the `200` body's `result` is already slimmed to the
-        `PlaygroundDataResult` shape (not the full discover payload).
-      operationId: submitPlaygroundData
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/IntelligenceDiscoverJobRequest"
-      responses:
-        "202":
-          description: Job accepted (queued, or deduplicated against a running job). `statusUrl` points at `/playground-data/{id}`.
-          headers:
-            X-Kinetk-Credits-Used:
-              $ref: "#/components/headers/CreditsUsed"
-            X-Kinetk-Credits-Remaining:
-              $ref: "#/components/headers/CreditsRemaining"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JobSubmitAcceptedResponse"
-        "200":
-          description: Cached result returned synchronously (slimmed; charged at full rate)
-          headers:
-            X-Kinetk-Credits-Used:
-              $ref: "#/components/headers/CreditsUsed"
-            X-Kinetk-Credits-Remaining:
-              $ref: "#/components/headers/CreditsRemaining"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PlaygroundDataCacheHitResponse"
-        "400":
-          $ref: "#/components/responses/Error"
-        "402":
-          description: Insufficient credits — body includes a budget recommendation
-          headers:
-            X-Kinetk-Credits-Used:
-              $ref: "#/components/headers/CreditsUsed"
-            X-Kinetk-Credits-Remaining:
-              $ref: "#/components/headers/CreditsRemaining"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/InsufficientCreditsResponse"
-        default:
-          $ref: "#/components/responses/Error"
-  /playground-data/{id}:
-    get:
-      summary: Poll a playground-data job — slim result
-      description: |
-        Returns the job's current state in a SLIM envelope:
-        `{ jobId, kind, status, error?, result? }` (no timing or billing
-        telemetry). On `succeeded`, `result` is the projected playground payload
-        (`PlaygroundDataResult`) — tag signals + insight prose only. `404` for an
-        unknown `jobId`, `410` once the result has expired.
-
-        Recommended polling cadence: every 2–5 seconds.
-      operationId: getPlaygroundData
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Slim job state. On success, `result` is the projected playground payload.
-          headers:
-            X-Kinetk-Credits-Used:
-              $ref: "#/components/headers/CreditsUsed"
-            X-Kinetk-Credits-Remaining:
-              $ref: "#/components/headers/CreditsRemaining"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PlaygroundDataResponse"
-        "400":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
-        "410":
-          $ref: "#/components/responses/Error"
-        default:
-          $ref: "#/components/responses/Error"
   /usage:
     get:
       summary: Credit usage history for your account
@@ -416,8 +313,7 @@ components:
       name: x-api-key
       description: >-
         Native API Gateway key for the `/health` probe. Not a customer
-        credential. (In the internal spec it also guards the admin
-        key-management endpoints.)
+        credential.
   headers:
     CreditsUsed:
       description: Credits consumed by this call (reserved estimate on a 202; actual once settled).
@@ -1002,118 +898,6 @@ components:
           description: When the context was assembled.
         context:
           $ref: "#/components/schemas/CampaignContext"
-    PlaygroundTopTag:
-      type: object
-      required: [tag, engagementPremiumPct, momentumScore, frequency, platformCount, signalClass]
-      properties:
-        tag:
-          type: string
-          example: automation
-        engagementPremiumPct:
-          type: number
-          description: Engagement premium of this tag vs the cohort baseline, percent.
-          example: 135.1
-        momentumScore:
-          type: number
-          description: Normalized composite of volume × premium × platform spread, in [0,1].
-          example: 0.3049
-        frequency:
-          type: integer
-          description: Count of content items carrying the tag.
-          example: 16
-        platformCount:
-          type: integer
-          description: Distinct platforms the tag appears on.
-          example: 2
-        signalClass:
-          type: string
-          enum: [High Signal, Emerging, Established, Moderate]
-    PlaygroundTagCombination:
-      type: object
-      required: [tagA, tagB, combinationLiftPct]
-      properties:
-        tagA:
-          type: string
-          example: ai
-        tagB:
-          type: string
-          example: aiautomation
-        combinationLiftPct:
-          type: number
-          description: Engagement lift of the pair vs the better-performing tag alone, percent.
-          example: 17.8
-    PlaygroundDataResult:
-      type: object
-      description: >-
-        Slim projection of an `intelligence_discover` result for the playground
-        UI — tag signals + insight prose only. The heavy narratives, graphs and
-        representative-content arrays of the full discover payload are dropped.
-      required: [topTags, tagCombinations, insights, tagInsights, narrativeInsights]
-      properties:
-        topTags:
-          type: array
-          items:
-            $ref: "#/components/schemas/PlaygroundTopTag"
-        tagCombinations:
-          type: array
-          items:
-            $ref: "#/components/schemas/PlaygroundTagCombination"
-        insights:
-          type: array
-          description: 4–6 LLM-generated arbitrage prose lines (empty if unavailable).
-          items:
-            type: string
-        tagInsights:
-          type: array
-          description: Tag-focused insight prose (empty if unavailable).
-          items:
-            type: string
-        narrativeInsights:
-          type: array
-          description: Narrative-focused insight prose (empty if unavailable).
-          items:
-            type: string
-    PlaygroundDataResponse:
-      type: object
-      description: >-
-        Slim job envelope from `GET /playground-data/{id}`. `result` is present
-        once `status: succeeded`; `error` once `failed`.
-      required: [jobId, kind, status]
-      properties:
-        jobId:
-          type: string
-          format: uuid
-        kind:
-          type: string
-          example: intelligence_discover
-        status:
-          $ref: "#/components/schemas/JobStatus"
-        error:
-          type: string
-          description: >-
-            Present once `status: failed`. Human-readable failure reason.
-        result:
-          $ref: "#/components/schemas/PlaygroundDataResult"
-    PlaygroundDataCacheHitResponse:
-      type: object
-      description: >-
-        Synchronous cache-hit body from `POST /playground-data`. The slimmed
-        result is returned inline (already projected — not the full discover
-        payload).
-      required: [jobId, status, fromCache, result]
-      properties:
-        jobId:
-          type: string
-        status:
-          type: string
-          enum: [succeeded]
-        fromCache:
-          type: boolean
-        charged:
-          type: number
-          description: Credits charged for this cached answer (full rate — no cache discount).
-        result:
-          $ref: "#/components/schemas/PlaygroundDataResult"
     JobKind:
       type: string
       description: Discriminator for which pipeline runs the job.
