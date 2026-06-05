@@ -482,18 +482,59 @@ components:
         creators:
           type: array
           items:
-            type: object
-            additionalProperties: true
+            $ref: "#/components/schemas/NarrativeCreator"
         platformBreakdown:
           type: array
           items:
-            type: object
-            additionalProperties: true
+            $ref: "#/components/schemas/NarrativePlatformBreakdown"
         duplicateGroups:
           type: array
           items:
             type: object
             additionalProperties: true
+            description: A group of near-duplicate content items within the cluster.
+    NarrativeCreator:
+      type: object
+      description: >-
+        A creator active in this narrative cluster, with their amplifier metrics.
+        Creator identity (handle / display name) is not exposed — use the numeric
+        `id` to correlate the same creator across narratives or to look them up.
+      required: [id, platform, content_count, total_engagement, amplifier_score]
+      properties:
+        id:
+          type: integer
+          description: Stable `creators.id` PK.
+        platform:
+          type: string
+        follower_count:
+          type: integer
+          nullable: true
+        content_count:
+          type: integer
+          description: Number of posts by this creator in the cluster.
+        total_engagement:
+          type: integer
+          format: int64
+          description: Summed views + likes + shares + comments across the creator's posts in the cluster.
+        first_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        amplifier_score:
+          type: number
+          description: 0–1 score of the creator's amplifying influence within the cluster.
+    NarrativePlatformBreakdown:
+      type: object
+      description: Per-platform content + engagement totals for the cluster.
+      required: [platform, content_count, total_engagement]
+      properties:
+        platform:
+          type: string
+        content_count:
+          type: integer
+        total_engagement:
+          type: integer
+          format: int64
     NarrativeContentEvidence:
       type: object
       required: [uuid, platform, tags]
