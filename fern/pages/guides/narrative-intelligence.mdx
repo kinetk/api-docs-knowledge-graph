@@ -15,7 +15,7 @@ There are two ways to access narratives:
 ### Trending
 
 ```bash
-curl -H "x-kinetk-key: $API_KEY" \
+curl -H "x-api-key: $API_KEY" \
   "$API_BASE/narratives/trending?window=7d&limit=12"
 ```
 
@@ -24,7 +24,7 @@ Returns the top narrative clusters for the window, ranked by `trendScore` (engag
 ### Search
 
 ```bash
-curl -H "x-kinetk-key: $API_KEY" \
+curl -H "x-api-key: $API_KEY" \
   "$API_BASE/narratives/search?q=smart+watch&window=7d&limit=12"
 ```
 
@@ -33,7 +33,7 @@ Filters the precomputed narrative set by free-text match across labels, summarie
 ### Detail
 
 ```bash
-curl -H "x-kinetk-key: $API_KEY" \
+curl -H "x-api-key: $API_KEY" \
   "$API_BASE/narratives/123"
 ```
 
@@ -45,7 +45,7 @@ When the precomputed set doesn't have what you need — e.g. you want to slice b
 
 ```bash
 curl -X POST "$API_BASE/intelligence/jobs" \
-  -H "x-kinetk-key: $API_KEY" \
+  -H "x-api-key: $API_KEY" \
   -H "content-type: application/json" \
   -d '{
     "kind": "intelligence_discover",

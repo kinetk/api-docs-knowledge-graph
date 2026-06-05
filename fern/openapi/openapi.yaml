@@ -8,7 +8,7 @@ info:
     intelligence work (`intelligence_search`, `intelligence_discover`,
     `campaign_brief`, `llm_context`).
 
-    Authentication: send your secret key in the `x-kinetk-key` header on every
+    Authentication: send your secret key in the `x-api-key` header on every
     request. Keys are issued from the billing dashboard and shown only once.
 
     Billing: async intelligence jobs are metered in credits (1 credit = $1.00).
@@ -37,7 +37,7 @@ servers:
         default: prod
         enum: [dev, prod]
 security:
-  - KinetkKeyAuth: []
+  - ApiKeyAuth: []
 paths:
   /health:
     get:
@@ -45,7 +45,7 @@ paths:
       description: Liveness probe with DB connectivity and ingestion freshness. Returns `503` when the DB is unreachable.
       operationId: getHealth
       security:
-        - AdminKeyAuth: []
+        - ApiKeyAuth: []
       responses:
         "200":
           description: Service is healthy
@@ -298,22 +298,14 @@ paths:
           $ref: "#/components/responses/Error"
 components:
   securitySchemes:
-    KinetkKeyAuth:
-      type: apiKey
-      in: header
-      name: x-kinetk-key
-      description: >-
-        Customer secret key (format `ktk_live_…`). Required on all data
-        endpoints. Validated by a custom authorizer that resolves your account
-        and applies usage-plan throttling. Missing / invalid / revoked / expired
-        → `401`; suspended account → `403`.
-    AdminKeyAuth:
+    ApiKeyAuth:
       type: apiKey
       in: header
       name: x-api-key
       description: >-
-        Native API Gateway key for the `/health` probe. Not a customer
-        credential.
+        Customer secret key (format `ktk_live_…`). Required on all endpoints.
+        API Gateway validates the key natively. Missing / invalid / revoked
+        → `403`; suspended account → `403`.
   headers:
     CreditsUsed:
       description: Credits consumed by this call (reserved estimate on a 202; actual once settled).

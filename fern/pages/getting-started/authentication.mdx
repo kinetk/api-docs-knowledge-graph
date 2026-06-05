@@ -1,15 +1,13 @@
 ---
 title: Authentication
-description: API-key authentication via the x-kinetk-key header.
+description: API-key authentication via the x-api-key header.
 ---
 
-Every customer endpoint requires your secret key in the `x-kinetk-key` header.
+Every endpoint requires your secret key in the `x-api-key` header.
 
 ```bash
-curl -H "x-kinetk-key: $API_KEY" "https://api.kinetk.ai/graph/narratives/trending?window=7d"
+curl -H "x-api-key: $API_KEY" "https://api.kinetk.ai/graph/narratives/trending?window=7d"
 ```
-
-(The `/health` probe is the one exception — it uses the `x-api-key` header.)
 
 ## Getting a key
 
@@ -21,7 +19,7 @@ Each key is bound to a usage plan with per-second and per-day rate limits — de
 
 | Status | Body | Cause |
 |---|---|---|
-| `401` / `403` | `{ "message": "Unauthorized" }` / `{ "message": "Forbidden" }` | Missing or invalid `x-kinetk-key`. Double-check the header name (case-insensitive) and that the value matches your issued key. |
+| `403` | `{ "message": "Forbidden" }` | Missing or invalid `x-api-key`. Double-check the header name (case-insensitive) and that the value matches your issued key. |
 | `429` | `{ "message": "Too Many Requests" }` | Per-second or per-day quota exceeded. Back off; if you need a higher limit, contact us. |
 
 ## Best practices

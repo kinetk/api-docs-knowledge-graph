@@ -45,7 +45,7 @@ The production API is served at:
 https://api.kinetk.ai/graph
 ```
 
-Every customer endpoint requires your secret key in the `x-kinetk-key` header (the `/health` probe uses `x-api-key`). We recommend exporting these as env vars so the examples elsewhere in these docs work directly:
+Every endpoint requires your secret key in the `x-api-key` header. We recommend exporting these as env vars so the examples elsewhere in these docs work directly:
 
 ```bash
 export API_BASE="https://api.kinetk.ai/graph"

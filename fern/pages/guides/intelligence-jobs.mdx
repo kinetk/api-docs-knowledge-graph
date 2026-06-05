@@ -55,7 +55,7 @@ Always check the HTTP status (`200` vs `202`) and the optional `fromCache` / `de
 ## Polling
 
 ```bash
-curl -H "x-kinetk-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
 ```
 
 Poll every 2–5 seconds. Status flows: `queued` → `running` → `succeeded` | `failed`.
