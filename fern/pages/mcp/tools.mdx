@@ -7,14 +7,16 @@ The `kinetk` MCP exposes three tools that map to the async-job lifecycle.
 
 ## `create_context_job`
 
-Submit an async job. Pick `kind` based on the analysis depth you want:
+Submit an async job. Pick `kind` by **what you want back**:
 
-| `kind` | Output |
-|---|---|
-| `intelligence_search` | Ranked content with vector similarity + Postgres metadata. |
-| `intelligence_discover` | Search + narratives + tag/creator analytics + LLM insights. |
-| `campaign_brief` | Persisted LLM-generated campaign brief (heavier). |
-| `llm_context` | Ephemeral LLM-ready campaign context bundle. |
+| `kind` | Needs | Returns — use when |
+|---|---|---|
+| `intelligence_search` | `query` | The matching **content itself** — ranked posts/videos with platform, tags, engagement, similarity. Use when you want source material to read or cite. |
+| `intelligence_discover` | `query` | **Synthesized insight signals only** — LLM-written arbitrage takeaways (overall, tag-focused, narrative-focused). No raw content. Use when you want the analytical "so what". _Currently supports `window: all` only; other time windows coming soon._ |
+| `campaign_brief` | `campaign` | A finished, **persisted strategy brief** we generate (positioning, narratives, recommended creators, platform strategy, content angles) plus its context. Use when you want a ready-made written deliverable. |
+| `llm_context` | `campaign` | The raw assembled campaign **context bundle** (narratives, top tags, creators, representative content) with **no generated brief**. Use when *you* will write the strategy yourself — faster and cheaper than `campaign_brief` because it skips the generation step. |
+
+**Rule of thumb:** a `query` → `intelligence_search` (content) or `intelligence_discover` (insights); a `campaign` → `llm_context` (you synthesize) or `campaign_brief` (we synthesize).
 
 ### Input
 
@@ -26,7 +28,7 @@ Common filters (work across all kinds):
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `platforms` | `string[]` | all | E.g. `["TIKTOK", "INSTAGRAM"]` |
-| `window` | `"24h" \| "7d" \| "30d" \| "all"` | `"all"` | Time filter on `published_at` |
+| `window` | `"24h" \| "7d" \| "30d" \| "all"` | `"all"` | Time filter on `published_at`. `intelligence_discover` currently accepts `all` only (other windows coming soon). |
 | `topK` | `number` | 1000 | Maps to backend `limit`. Capped client-side at 1000 to keep agent payloads bounded. |
 | `expandQuery` | `boolean` | false | Opt in to LLM-backed query expansion (search/discover only) |
 | `vectors` | `"all_media" \| "image" \| "video"` | `"all_media"` | Which target vectors the vector search fans out to |
@@ -47,7 +49,7 @@ If the backend has a fresh cached run for this input, `status` is `succeeded` an
 
 ### Example agent prompt
 
-> Use kinetk to submit an `intelligence_discover` job for `luxury watch culture 2026` on TikTok and Instagram over the last 30 days.
+> Use kinetk to submit an `intelligence_discover` job for `luxury watch culture 2026` on TikTok and Instagram.
 
 ## `get_context_job_status`
 
@@ -85,29 +87,45 @@ Fetch the result. Defaults to the **slim envelope** (token-efficient).
 
 ### Returns (slim envelope)
 
+The envelope shape depends on `kind`:
+
 ```jsonc
+// intelligence_search → the matching content items
 {
-  "content": [
+  "jobId": "...", "kind": "intelligence_search", "status": "completed",
+  "items": [
     {
       "id": "uuid",
       "platform": "TIKTOK",
       "title": "...",
+      "description": "...",
       "tags": ["smartwatch", "fitness"],
       "similarity": 0.81,
-      "engagement": 12500,
-      "creator": { "id": 42, "handle": "fitfam_lisa", "platform": "TIKTOK" }
+      "engagement": { "views": 12500, "likes": 800, "shares": 40, "comments": 60 },
+      "publishedAt": "2026-05-01T12:00:00.000Z",
+      "creator": { "followerCount": 120000 }
     }
-  ],
-  "narratives": [ /* intelligence_discover only */ ],
-  "insights": [ /* intelligence_discover only */ ]
+  ]
+}
+
+// intelligence_discover → insight signals only (no raw content)
+{
+  "jobId": "...", "kind": "intelligence_discover", "status": "completed",
+  "query": "...",
+  "insights": ["..."],
+  "tagInsights": ["..."],
+  "narrativeInsights": ["..."]
 }
 ```
 
-Skipped by default: raw vectors, full retrieval diagnostics, debug breakdowns.
+Creator identity (handle/display name) and source URLs are never returned; a
+creator carries only a non-identifying `followerCount`.
 
 ### Returns (verbose)
 
-The full `QueryNarrativeDiscoveryResponse` (or `QueryIntelligenceSearchResponse` for `intelligence_search`) — see the [API Reference](/api-reference) for the complete schema.
+Set `verbose: true` for the full untouched graph-service payload for the kind —
+see the [API Reference](/api-reference) for the complete schemas
+(`IntelligenceSearchResponse`, `QueryNarrativeDiscoveryResponse`, etc.).
 
 ### Pending behavior
 

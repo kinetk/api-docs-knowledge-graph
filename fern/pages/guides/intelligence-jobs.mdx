@@ -18,10 +18,10 @@ The intelligence pipeline does real work: text embeddings, multimodal vector sea
 
 | `kind` | Input | Output | Cache window |
 |---|---|---|---|
-| `intelligence_search` | `query` + filters | Ranked content + retrieval diagnostics | 15 min |
-| `intelligence_discover` | `query` + filters | Search + narratives + analytics + LLM insights | 1 h |
+| `intelligence_search` | `query` + filters | The matching content items | 15 min |
+| `intelligence_discover` | `query` + filters | Insight signals only — LLM arbitrage lines (`window: all` only for now) | 1 h |
 | `campaign_brief` | `campaign` object | Persisted LLM-generated brief | 6 h |
-| `llm_context` | `campaign` object | Ephemeral LLM-ready context bundle | 6 h |
+| `llm_context` | `campaign` object | Raw campaign context bundle (no generated brief) | 6 h |
 
 `intelligence_search` / `intelligence_discover` take a free-text `query`. `campaign_brief` / `llm_context` take a structured `campaign` object — see the [API Reference](/api-reference) for full shapes.
 
@@ -55,7 +55,7 @@ Always check the HTTP status (`200` vs `202`) and the optional `fromCache` / `de
 ## Polling
 
 ```bash
-curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
+curl -H "x-kinetk-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
 ```
 
 Poll every 2–5 seconds. Status flows: `queued` → `running` → `succeeded` | `failed`.

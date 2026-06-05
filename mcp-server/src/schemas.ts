@@ -122,7 +122,7 @@ export const createContextJobJsonSchema = {
       type: "string",
       enum: ["intelligence_search", "intelligence_discover", "campaign_brief", "llm_context"],
       description:
-        "Backend pipeline depth. intelligence_search = ranked content. intelligence_discover = search + narratives + tag/creator analytics. campaign_brief = LLM-generated persisted brief. llm_context = ephemeral LLM-ready campaign context bundle.",
+        "What to get back. intelligence_search = the matching content itself, ranked posts/videos (needs `query`). intelligence_discover = synthesized insight signals only, no raw content (needs `query`; time window 'all' only for now). campaign_brief = a finished strategy brief we generate + persist (needs `campaign`). llm_context = the raw campaign context bundle for YOU to synthesize from, no generated brief — faster/cheaper than campaign_brief (needs `campaign`). Rule of thumb: `query` → search or discover; `campaign` → llm_context or campaign_brief.",
     },
     query: {
       type: "string",
@@ -147,7 +147,7 @@ export const createContextJobJsonSchema = {
           type: "string",
           enum: ["24h", "7d", "30d", "all"],
           description:
-            "Time window. 'all' disables the published_at filter; bounded values keep only fresh content.",
+            "Time window. 'all' disables the published_at filter; bounded values keep only fresh content. Note: intelligence_discover currently supports 'all' only (other windows coming soon).",
         },
       },
     },

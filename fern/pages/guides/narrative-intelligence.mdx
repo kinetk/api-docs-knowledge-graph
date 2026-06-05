@@ -15,7 +15,7 @@ There are two ways to access narratives:
 ### Trending
 
 ```bash
-curl -H "x-api-key: $API_KEY" \
+curl -H "x-kinetk-key: $API_KEY" \
   "$API_BASE/narratives/trending?window=7d&limit=12"
 ```
 
@@ -24,7 +24,7 @@ Returns the top narrative clusters for the window, ranked by `trendScore` (engag
 ### Search
 
 ```bash
-curl -H "x-api-key: $API_KEY" \
+curl -H "x-kinetk-key: $API_KEY" \
   "$API_BASE/narratives/search?q=smart+watch&window=7d&limit=12"
 ```
 
@@ -33,7 +33,7 @@ Filters the precomputed narrative set by free-text match across labels, summarie
 ### Detail
 
 ```bash
-curl -H "x-api-key: $API_KEY" \
+curl -H "x-kinetk-key: $API_KEY" \
   "$API_BASE/narratives/123"
 ```
 
@@ -41,23 +41,23 @@ Returns one narrative plus its content list, top creators, per-platform breakdow
 
 ## Ad-hoc discovery (async)
 
-When the precomputed set doesn't have what you need — e.g. you want to slice by a custom query, a different time window, or specific platforms — submit an async `intelligence_discover` job:
+When the precomputed set doesn't have what you need — e.g. you want to slice by a custom query or specific platforms — submit an async `intelligence_discover` job:
 
 ```bash
 curl -X POST "$API_BASE/intelligence/jobs" \
-  -H "x-api-key: $API_KEY" \
+  -H "x-kinetk-key: $API_KEY" \
   -H "content-type: application/json" \
   -d '{
     "kind": "intelligence_discover",
     "input": {
       "query": "luxury watch culture 2026",
       "platforms": ["TIKTOK", "INSTAGRAM"],
-      "limit": 1000,
-      "window": "30d",
-      "topK": 1000
+      "window": "all"
     }
   }'
 ```
+
+`intelligence_discover` currently supports `window: all` only — the 24h, 7d and 30d time windows are coming soon.
 
 The discover pipeline runs all of the following before returning:
 
@@ -69,7 +69,7 @@ The discover pipeline runs all of the following before returning:
 6. **Analytics** — top tags, tag co-occurrence, narrative roles, creator amplifier scores, per-platform opportunities, tag arbitrage signals, attribute lifts.
 7. **LLM augmentation** — an LLM labels each cluster and writes 4–6 quantified arbitrage insight lines.
 
-The response is a single `QueryNarrativeDiscoveryResponse` — see the [API Reference](/api-reference) for the full schema.
+The response (`QueryNarrativeDiscoveryResponse`) returns the **insight signals only** — the three LLM arbitrage arrays (`insights`, `tagInsights`, `narrativeInsights`). Steps 1–6 are computed to produce those insights but are not part of the response; for the raw matching content use `intelligence_search`. See the [API Reference](/api-reference) for the full schema.
 
 ## Discovery vs. search
 
@@ -77,8 +77,8 @@ Both `intelligence_search` and `intelligence_discover` start with the same retri
 
 | Kind | Returns | Latency | When to use |
 |---|---|---|---|
-| `intelligence_search` | Ranked content + retrieval diagnostics | 5–10 s | You want a list of matching items, no clustering or analytics. |
-| `intelligence_discover` | Search results + narratives + analytics + LLM insights | 10–20 s | You want grouped insight and arbitrage signals, not just items. |
+| `intelligence_search` | Ranked content items | 5–10 s | You want the matching content itself. |
+| `intelligence_discover` | Insight signals only — LLM arbitrage lines (overall, tag-focused, narrative-focused) | 10–20 s | You want the synthesized "so what", not the items. |
 
 Pick `intelligence_search` if you're feeding a search UI; pick `intelligence_discover` if you're feeding an analyst or agent that wants the "shape" of the conversation.
 

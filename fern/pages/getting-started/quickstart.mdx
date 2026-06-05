@@ -37,7 +37,7 @@ If you get `403 { "message": "Forbidden" }`, the API key isn't being sent — ch
 ## 2. Trending narratives (precomputed read)
 
 ```bash
-curl -H "x-api-key: $API_KEY" \
+curl -H "x-kinetk-key: $API_KEY" \
   "$API_BASE/narratives/trending?window=7d&limit=10"
 ```
 
@@ -71,15 +71,14 @@ The retrieval / discovery / brief / context kinds all run async because they can
 
 ```bash
 curl -X POST "$API_BASE/intelligence/jobs" \
-  -H "x-api-key: $API_KEY" \
+  -H "x-kinetk-key: $API_KEY" \
   -H "content-type: application/json" \
   -d '{
     "kind": "intelligence_discover",
     "input": {
       "query": "smart watch launch",
       "platforms": ["TIKTOK", "INSTAGRAM"],
-      "limit": 1000,
-      "window": "7d"
+      "window": "all"
     }
   }'
 ```
@@ -106,7 +105,7 @@ JOB="0190bd6f-..."
 ## 4. Poll for the result
 
 ```bash
-curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
+curl -H "x-kinetk-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
 ```
 
 Poll every 2–5 seconds until `status` flips from `queued` → `running` → `succeeded`. Typical end-to-end time for `intelligence_discover`: 5–20 seconds.

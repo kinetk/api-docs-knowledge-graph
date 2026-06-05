@@ -26,7 +26,12 @@ const TOOLS = [
   {
     name: "create_context_job",
     description:
-      "Submit an async context-retrieval job to the KINETK Knowledge Graph. Choose a `kind` based on how much analysis depth you need: intelligence_search (ranked content), intelligence_discover (search + narratives + tag/creator analytics), campaign_brief (LLM-generated brief, persisted), llm_context (ephemeral LLM-ready campaign context bundle). Returns a jobId — poll get_context_job_status, then call get_context_job_result.",
+      "Submit an async job to the KINETK Knowledge Graph, then poll get_context_job_status and fetch get_context_job_result. Pick `kind` by WHAT YOU WANT BACK:\n" +
+      "- intelligence_search (needs `query`): the matching CONTENT itself — ranked posts/videos with platform, tags, engagement, similarity. Use when you want the actual source material to read or cite.\n" +
+      "- intelligence_discover (needs `query`): SYNTHESIZED INSIGHT signals only — LLM-written arbitrage takeaways (overall, tag-focused, narrative-focused). No raw content. Use when you want the analytical 'so what' about a topic, not the underlying posts. (Currently supports time window 'all' only; other windows coming soon.)\n" +
+      "- campaign_brief (needs `campaign`): a finished, PERSISTED strategy brief WE generate for you (positioning, narratives to ride, recommended creators, platform strategy, content angles) plus its supporting context. Use when you want a ready-made written deliverable.\n" +
+      "- llm_context (needs `campaign`): the raw assembled campaign CONTEXT bundle (narratives, top tags, creators, representative content) with NO generated brief. Use when YOU will write the strategy yourself and just want the evidence to reason over — faster and cheaper than campaign_brief because it skips the brief-generation step.\n" +
+      "Rule of thumb: a `query` → search (content) or discover (insights); a `campaign` → llm_context (you synthesize) or campaign_brief (we synthesize).",
     inputSchema: createContextJobJsonSchema,
   },
   {
@@ -38,7 +43,7 @@ const TOOLS = [
   {
     name: "get_context_job_result",
     description:
-      "Fetch the result of a completed context job. Returns a slim LLM-optimized envelope by default (id, platform, title, tags, similarity, engagement, creator, graph). Set verbose=true for the full untouched graph-service payload (richer narratives/analytics, more tokens). Returns status='pending' if the job is still running.",
+      "Fetch the result of a completed context job. Returns a slim, LLM-optimized envelope by default — shape varies by kind: ranked content items (intelligence_search), insight signal arrays (intelligence_discover), or the campaign context/brief (campaign_brief, llm_context). Set verbose=true for the full untouched graph-service payload (more tokens). Returns status='pending' if the job is still running.",
     inputSchema: getContextJobResultJsonSchema,
   },
 ];
