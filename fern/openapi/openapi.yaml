@@ -595,7 +595,14 @@ components:
           items:
             $ref: "#/components/schemas/RankedContent"
         graph:
-          $ref: "#/components/schemas/QueryGraph"
+          allOf:
+            - $ref: "#/components/schemas/QueryGraph"
+          description: >-
+            A relationship graph over the result set — content, tag, creator and
+            narrative nodes linked by similarity, tag co-occurrence and authorship
+            edges. Use it to visualize "the shape of the conversation" as a network
+            diagram, or to run graph analysis (hubs, bridges, communities) over the
+            returned set. Skip it if you only need the ranked `content` list.
     QueryNarrativeDiscoveryResponse:
       type: object
       description: >-
@@ -715,6 +722,12 @@ components:
           type: number
     QueryGraph:
       type: object
+      description: >-
+        Relationship graph over a result set: `nodes` are content / tag / creator /
+        narrative entities and `edges` are their relationships (semantic
+        similarity, tag co-occurrence, creator authorship, cluster membership).
+        Built for network visualization and graph analysis; creator nodes carry a
+        non-identifying `creatorId` for correlation.
       required: [nodes, edges]
       properties:
         nodes:

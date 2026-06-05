@@ -77,10 +77,12 @@ Both `intelligence_search` and `intelligence_discover` start with the same retri
 
 | Kind | Returns | Latency | When to use |
 |---|---|---|---|
-| `intelligence_search` | Ranked content items | 5–10 s | You want the matching content itself. |
+| `intelligence_search` | Ranked content items **+ a relationship `graph`** | 5–10 s | You want the matching content itself. |
 | `intelligence_discover` | Insight signals only — LLM arbitrage lines (overall, tag-focused, narrative-focused) | 10–20 s | You want the synthesized "so what", not the items. |
 
 Pick `intelligence_search` if you're feeding a search UI; pick `intelligence_discover` if you're feeding an analyst or agent that wants the "shape" of the conversation.
+
+`intelligence_search` also returns a `graph` — content, tag, creator and narrative nodes linked by similarity, tag co-occurrence and authorship edges. Render it as a network diagram to show how the matching content relates, or run graph analysis (hubs, bridges, communities) over it. Ignore the field if you only need the ranked list.
 
 ## Free-text vs. campaign context
 
