@@ -1,0 +1,59 @@
+---
+title: The content object
+description: The ranked content item returned by intelligence_search — its signals and exactly how items are scored.
+---
+
+`intelligence_search` returns a `content` array of ranked items. Each item carries the source metadata (platform, title, tags, engagement counts, `publishedAt`, `creatorId`, …) plus a set of **normalized signals** and a single **ranking score** the list is sorted by.
+
+Every signal is normalized **within the result set** for that query — values are relative to the other items returned, not absolute.
+
+## Signal reference
+
+| Field | What it is | Formula |
+|---|---|---|
+| `rawSimilarity` | Raw vector-store certainty for the best-matching media vector (text→visual). | cosine/certainty, pre-normalization. `0` = no multimodal evidence (e.g. a tag-widened row). |
+| `similarity` | `rawSimilarity` rescaled to ~[0,1] against fixed anchors. A multimodal **sub-score** — not the overall ranking signal. | fixed-anchor rescale of `rawSimilarity` |
+| `textRerankScore` | Text→text relevance of the query vs the item's title/description/tags, in [0,1]. `null` when the row has no usable text. | reranker score |
+| `relevance` | The combined relevance actually used to rank: `similarity` blended with `textRerankScore`, after a soft certainty floor. **Prefer this over `similarity`.** | `(1 − w)·similarity + w·textRerankScore`, then `×0.5` if `rawSimilarity` is below the certainty floor (`w` is adaptive) |
+| `engagementScore` | Log-scaled, weighted engagement, normalized to the top item. | `log1p(views + 2·likes + 3·comments + 4·shares) / max` |
+| `authorReach` | Normalized follower count (log-scaled). | `log1p(followers) / max(log1p(followers))` |
+| `recencyScore` | How recent vs the oldest/newest item in the set; `0.5` if no date. | `(ts − oldest) / (newest − oldest)` |
+| `engagementDepth` | Like-per-view ratio — engagement quality, not volume. | `views>0 ? min(1, likes/(views+1)) : 0` |
+| `rrfScore` | Reciprocal Rank Fusion across the per-vector result sets (a retrieval-stage signal). | `Σ 1/(rank + 60)` over each vector the item matched |
+| `targetVectors` | Which media vectors the item matched on. | set of vector names from the per-vector queries |
+| `exampleRankingScore` | The single score the list is sorted by (descending). | see below ↓ |
+
+## Ranking — `exampleRankingScore`
+
+The ranking score branches on **engagement coverage** — the fraction of items in the set with `views > 0` — so sorting stays reliable even on sparse social data.
+
+**Sufficient engagement data (coverage ≥ 0.3):**
+
+```
+0.60·relevance
+  + 0.20·(relevance · engagementScore)
+  + 0.08·recencyScore
+  + 0.07·authorReach
+  + 0.05·engagementDepth
+```
+
+Engagement is gated *behind* relevance (the `relevance · engagementScore` product), so an irrelevant viral clip can't leapfrog on engagement alone.
+
+**Sparse engagement data (coverage < 0.3):**
+
+```
+0.85·relevance + 0.15·recencyScore
+```
+
+The `content` list is returned sorted by `exampleRankingScore` descending.
+
+> Weights are tuned as the ranking model evolves — treat the exact coefficients as current behavior, not a fixed contract.
+
+## Relationship graph edges
+
+`intelligence_search` also returns a `graph` over the result set (see the [API Reference](/api-reference)). Two content nodes are linked by:
+
+- **`semantic_similarity`** — when the cosine similarity of their media vectors is **≥ 0.84**.
+- **`tag_overlap`** — otherwise, when the Jaccard overlap of their tags is **≥ 0.28**.
+
+Plus `creator_posted`, `tagged_with` and `contains` edges connecting creators, tags and narratives.

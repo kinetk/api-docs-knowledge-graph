@@ -721,10 +721,14 @@ components:
           type: integer
         targetVectors:
           type: array
+          description: Which media vectors this item matched on (the per-vector queries it surfaced in).
           items:
             type: string
         rrfScore:
           type: number
+          description: >
+            Reciprocal Rank Fusion score combining the item's rank across every
+            vector it matched: Σ 1/(rank + 60). A pre-scoring retrieval signal.
         rawSimilarity:
           type: number
           description: >
@@ -753,14 +757,31 @@ components:
             falls back to the multimodal signal).
         engagementScore:
           type: number
+          description: >
+            Log-scaled, weighted engagement normalized to the top item in the set:
+            log1p(views + 2·likes + 3·comments + 4·shares) / max.
         recencyScore:
           type: number
+          description: >
+            How recent the item is vs the oldest/newest in the set, in [0,1]:
+            (ts − oldest) / (newest − oldest). 0.5 when the item has no published date.
         authorReach:
           type: number
+          description: >
+            Log-scaled follower count normalized to the set:
+            log1p(followers) / max(log1p(followers)).
         engagementDepth:
           type: number
+          description: >
+            Like-per-view ratio — engagement quality, not volume:
+            views>0 ? min(1, likes/(views+1)) : 0.
         exampleRankingScore:
           type: number
+          description: >
+            The single score the content list is sorted by (descending). Blends
+            `relevance` with engagement, recency, author reach and depth; on a set
+            with little engagement data it leans almost entirely on relevance +
+            recency. See the "Content object" guide for the exact formula.
     QueryGraph:
       type: object
       description: >-
