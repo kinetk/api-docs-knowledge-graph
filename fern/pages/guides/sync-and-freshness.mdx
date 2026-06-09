@@ -36,3 +36,5 @@ Most endpoints accept a `window` parameter to restrict results by `published_at`
 | `all` | No time filter (default for live retrieval endpoints) |
 
 Precomputed narrative endpoints only support `24h | 7d | 30d`. The `all` window exists because most ingested content has older `published_at` values and a 7-day cutoff was filtering nearly all matches — override only when you specifically want fresh content.
+
+Live retrieval jobs (`POST /intelligence/jobs`) do not yet support `24h` — it is coming soon, and requesting it returns 400. Use `7d`, `30d` or `all`.

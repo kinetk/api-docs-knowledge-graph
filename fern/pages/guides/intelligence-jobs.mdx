@@ -28,7 +28,7 @@ The intelligence pipeline does real work: text embeddings, multimodal vector sea
 Common input filters apply to all four:
 
 - `platforms`: e.g. `["TIKTOK", "INSTAGRAM"]`. Defaults to all.
-- `window`: `24h | 7d | 30d | all`. Defaults to `all` (no time filter).
+- `window`: `7d | 30d | all`. Defaults to `all` (no time filter). The `24h` window is not yet available (coming soon) and returns 400 — use `7d`, `30d` or `all`.
 - `limit` / `topK`: max items to return. Default 1000, hard cap 1000 in the MCP client (configurable in direct HTTP).
 - `expandQuery`: opt in to LLM-backed query expansion (search-only).
 

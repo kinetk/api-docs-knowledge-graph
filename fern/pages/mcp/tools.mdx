@@ -28,7 +28,7 @@ Common filters (work across all kinds):
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `platforms` | `string[]` | all | E.g. `["TIKTOK", "INSTAGRAM"]` |
-| `window` | `"24h" \| "7d" \| "30d" \| "all"` | `"all"` | Time filter on `published_at`. `intelligence_discover` currently accepts `all` only (other windows coming soon). |
+| `window` | `"7d" \| "30d" \| "all"` | `"all"` | Time filter on `published_at`. The `24h` window is not yet available (coming soon). `intelligence_discover` accepts `all` only. |
 | `topK` | `number` | 1000 | Maps to backend `limit`. Capped client-side at 1000 to keep agent payloads bounded. |
 | `expandQuery` | `boolean` | false | Opt in to LLM-backed query expansion (search/discover only) |
 | `vectors` | `"all_media" \| "image" \| "video"` | `"all_media"` | Which target vectors the vector search fans out to |
