@@ -125,7 +125,12 @@ function parseTimeoutMs(raw: string | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-main().catch((err) => {
-  process.stderr.write(`kinetk-mcp-server fatal: ${formatError(err)}\n`);
-  process.exit(1);
-});
+// Only boot the server when run directly (e.g. `node dist/index.js`), not when
+// the module is imported — so a `require('./dist/index.js')` smoke test can
+// verify the build loads without GRAPH_SERVICE_URL being set.
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`kinetk-mcp-server fatal: ${formatError(err)}\n`);
+    process.exit(1);
+  });
+}
