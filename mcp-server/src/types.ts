@@ -4,14 +4,14 @@
 
 // Mirrors graph-service/src/intelligence/jobs/types.ts.
 export type JobKind =
-  | "intelligence_search"
-  | "intelligence_discover"
+  | "intelligence_records"
+  | "intelligence_signals"
   | "campaign_brief"
   | "llm_context";
 
 export const JOB_KINDS: readonly JobKind[] = [
-  "intelligence_search",
-  "intelligence_discover",
+  "intelligence_records",
+  "intelligence_signals",
   "campaign_brief",
   "llm_context",
 ] as const;

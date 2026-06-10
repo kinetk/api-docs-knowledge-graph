@@ -26,7 +26,13 @@ const TOOLS = [
   {
     name: "create_context_job",
     description:
-      "Submit an async context-retrieval job to the KINETK Knowledge Graph. Choose a `kind` based on how much analysis depth you need: intelligence_search (ranked content), intelligence_discover (search + narratives + tag/creator analytics), campaign_brief (LLM-generated brief, persisted), llm_context (ephemeral LLM-ready campaign context bundle). Returns a jobId — poll get_context_job_status, then call get_context_job_result.",
+      "Submit an async job to the KINETK Knowledge Graph, then poll get_context_job_status and fetch get_context_job_result. Pick `kind` by WHAT YOU WANT BACK:\n" +
+      "- intelligence_records (needs `query` + `limit`): the matching CONTENT itself — ranked posts/videos with platform, tags, engagement, similarity. Use when you want the actual source material to read or cite.\n" +
+      "- intelligence_signals (needs `query` — and ONLY `query`): SYNTHESIZED INSIGHT signals only — LLM-written arbitrage takeaways (overall, tag-focused, narrative-focused). No raw content. Use when you want the analytical 'so what' about a topic, not the underlying posts. All other parameters (time window, limits, platforms) are server-managed for this kind; any filters/options you pass are dropped before submit. Bounded time windows are coming soon.\n" +
+      "- campaign_brief (needs `campaign` + `limit`): a finished, PERSISTED strategy brief WE generate for you (positioning, narratives to ride, recommended creators, platform strategy, content angles) plus its supporting context. Use when you want a ready-made written deliverable.\n" +
+      "- llm_context (needs `campaign` + `limit`): the raw assembled campaign CONTEXT bundle (narratives, top tags, creators, representative content) with NO generated brief. Use when YOU will write the strategy yourself and just want the evidence to reason over — faster and cheaper than campaign_brief because it skips the brief-generation step.\n" +
+      "For intelligence_records / campaign_brief / llm_context the API requires an explicit `limit` — how many records to retrieve, 100–50000. Jobs are billed per record, so there is NO default: you choose the spend (1000 is a sensible starting point). It also requires an explicit time window (7d | 30d | all); if you don't set filters.window this server defaults it to 'all'.\n" +
+      "Rule of thumb: a `query` → records (content) or signals (insights); a `campaign` → llm_context (you synthesize) or campaign_brief (we synthesize).",
     inputSchema: createContextJobJsonSchema,
   },
   {
@@ -38,7 +44,7 @@ const TOOLS = [
   {
     name: "get_context_job_result",
     description:
-      "Fetch the result of a completed context job. Returns a slim LLM-optimized envelope by default (id, platform, title, tags, similarity, engagement, creator, graph). Set verbose=true for the full untouched graph-service payload (richer narratives/analytics, more tokens). Returns status='pending' if the job is still running.",
+      "Fetch the result of a completed context job. Returns a slim, LLM-optimized envelope by default — shape varies by kind: ranked content items (intelligence_records), insight signal arrays (intelligence_signals), or the campaign context/brief (campaign_brief, llm_context). Set verbose=true for the full untouched graph-service payload (more tokens). Returns status='pending' if the job is still running.",
     inputSchema: getContextJobResultJsonSchema,
   },
 ];
@@ -119,7 +125,12 @@ function parseTimeoutMs(raw: string | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-main().catch((err) => {
-  process.stderr.write(`kinetk-mcp-server fatal: ${formatError(err)}\n`);
-  process.exit(1);
-});
+// Only boot the server when run directly (e.g. `node dist/index.js`), not when
+// the module is imported — so a `require('./dist/index.js')` smoke test can
+// verify the build loads without GRAPH_SERVICE_URL being set.
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`kinetk-mcp-server fatal: ${formatError(err)}\n`);
+    process.exit(1);
+  });
+}

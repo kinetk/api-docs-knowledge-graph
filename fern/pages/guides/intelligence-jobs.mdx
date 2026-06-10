@@ -18,28 +18,30 @@ The intelligence pipeline does real work: text embeddings, multimodal vector sea
 
 | `kind` | Input | Output | Cache window |
 |---|---|---|---|
-| `intelligence_search` | `query` + filters | Ranked content + retrieval diagnostics | 15 min |
-| `intelligence_discover` | `query` + filters | Search + narratives + analytics + LLM insights | 1 h |
+| `intelligence_records` | `query` + filters | The matching content items | 15 min |
+| `intelligence_signals` | `query` only | Insight signals only — LLM arbitrage lines | 1 h |
 | `campaign_brief` | `campaign` object | Persisted LLM-generated brief | 6 h |
-| `llm_context` | `campaign` object | Ephemeral LLM-ready context bundle | 6 h |
+| `llm_context` | `campaign` object | Raw campaign context bundle (no generated brief) | 6 h |
 
-`intelligence_search` / `intelligence_discover` take a free-text `query`. `campaign_brief` / `llm_context` take a structured `campaign` object — see the [API Reference](/api-reference) for full shapes.
+`intelligence_records` / `intelligence_signals` take a free-text `query`. `campaign_brief` / `llm_context` take a structured `campaign` object — see the [API Reference](/api-reference) for full shapes.
 
-Common input filters apply to all four:
+`intelligence_signals` accepts **only** `query` — every other parameter (time window, scan size, platforms, query expansion) is fixed by the service for this kind, and any extra input field returns `400`.
+
+Input filters for the other three kinds (`intelligence_records`, `campaign_brief`, `llm_context`):
 
 - `platforms`: e.g. `["TIKTOK", "INSTAGRAM"]`. Defaults to all.
-- `window`: `24h | 7d | 30d | all`. Defaults to `all` (no time filter).
-- `limit` / `topK`: max items to return. Default 1000, hard cap 1000 in the MCP client (configurable in direct HTTP).
-- `expandQuery`: opt in to LLM-backed query expansion (search-only).
+- `window`: `7d | 30d | all`. **Required** — there is no default; omitting it returns 400. Use `all` for no time filter. A `24h` window is coming soon.
+- `limit`: the number of records to retrieve, `100`–`50000`. **Required** — there is no default; omitting it returns 400. Jobs are billed per record, so the limit is how you choose your spend (`1000` is a sensible starting point).
+- `expandQuery`: opt in to LLM-backed query expansion (`intelligence_records` only).
 
 ## Submit response shapes
 
 A submit can return one of three things depending on dedup + cache state:
 
 ```jsonc
-// 1. Fresh — new work queued
+// 1. Fresh — new work queued, credits reserved at the estimate
 HTTP 202
-{ "jobId": "...", "status": "queued", "statusUrl": "/intelligence/jobs/..." }
+{ "jobId": "...", "status": "queued", "estimated_cost": 1.333, "statusUrl": "/intelligence/jobs/..." }
 
 // 2. Dedup — identical input already running, same jobId
 HTTP 202
@@ -47,10 +49,20 @@ HTTP 202
 
 // 3. Cache hit — succeeded result inline, no new run
 HTTP 200
-{ "jobId": "...", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true }
+{ "jobId": "...", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true, "charged": 1.2 }
 ```
 
 Always check the HTTP status (`200` vs `202`) and the optional `fromCache` / `dedup` flags before deciding whether to start polling.
+
+## Billing & costs
+
+Jobs are paid in credits:
+
+- **Submit reserves, completion settles.** A fresh `202` includes `estimated_cost` — an upper bound computed from your requested `limit` and `window`, reserved at submit. The final charge is computed from the records actually returned (≤ the estimate) and the unused remainder is released. Cache hits (`200`) are charged at the full rate — the body's `charged` field is the cost.
+- **Insufficient balance → `402`.** The body includes `credits_required`, `credits_available` and a machine-readable recommendation: the largest affordable `limit` for your window, and (for `intelligence_records`) per-window alternatives so you can trade freshness for volume.
+- **Headers.** Every billed response carries `X-Kinetk-Credits-Used` (this call) and `X-Kinetk-Credits-Remaining` (your balance).
+- **`intelligence_signals` is flat-priced**: 0.5 credits per request for a fixed 3000-record scan. If the run matches fewer than 1500 records, the job fails (poll shows `status: "failed"` with a refine-your-query message) and the 0.5 credits are refunded in full.
+- **Failed jobs are fully refunded.** Any job that ends `failed` releases its entire reservation.
 
 ## Polling
 
@@ -62,13 +74,13 @@ Poll every 2–5 seconds. Status flows: `queued` → `running` → `succeeded` |
 
 ```jsonc
 // running
-{ "jobId": "...", "kind": "intelligence_discover", "status": "running",
+{ "jobId": "...", "kind": "intelligence_signals", "status": "running",
   "submittedAt": 1745859300000, "startedAt": 1745859302100 }
 
 // succeeded
-{ "jobId": "...", "kind": "intelligence_discover", "status": "succeeded",
+{ "jobId": "...", "kind": "intelligence_signals", "status": "succeeded",
   "submittedAt": 1745859300000, "startedAt": 1745859302100, "completedAt": 1745859315400,
-  "result": { /* QueryNarrativeDiscoveryResponse — see API reference */ } }
+  "result": { /* signals payload — see API reference */ } }
 
 // failed
 { "jobId": "...", "status": "failed",
@@ -86,18 +98,7 @@ Status response codes:
 
 ## Cache semantics
 
-Submit computes `inputHash = sha256(canonicalJson({ kind, input }))` and checks for a recent successful job with the same hash. If one exists within the per-kind freshness window above, the cached result is returned inline (status `200`, `fromCache: true`).
-
-**To bypass the cache** on a single call, set `input.debug: true`:
-
-```json
-{
-  "kind": "intelligence_discover",
-  "input": { "query": "smart watch launch", "...": "...", "debug": true }
-}
-```
-
-This forces a fresh worker run regardless of cache state. Use it sparingly — heavy kinds are expensive.
+Submit computes `inputHash = sha256(canonicalJson({ kind, input }))` and checks for a recent successful job with the same hash. If one exists within the per-kind freshness window above, the cached result is returned inline (status `200`, `fromCache: true`) — charged at the full rate. To get fresher data, vary the input (e.g. a different `window`) or wait for the freshness window to lapse.
 
 ## Dedup semantics
 

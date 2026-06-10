@@ -3,7 +3,7 @@ title: Quickstart
 description: Your first request — from health check to running an async intelligence job.
 ---
 
-Five minutes from `curl` to a real `intelligence_discover` result. Pick any HTTP client you like; we use `curl` here.
+Five minutes from `curl` to a real `intelligence_signals` result. Pick any HTTP client you like; we use `curl` here.
 
 ## Prerequisites
 
@@ -34,7 +34,81 @@ Expected response (status `200`, latency under 1 second):
 
 If you get `403 { "message": "Forbidden" }`, the API key isn't being sent — check the header name and value.
 
-## 2. Trending narratives (precomputed read)
+## 2. Submit an async intelligence job
+
+The records / signals / brief / context kinds all run async because they can take 5–20 seconds. Submit returns immediately with a `jobId`:
+
+```bash
+curl -X POST "$API_BASE/intelligence/jobs" \
+  -H "x-api-key: $API_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "kind": "intelligence_signals",
+    "input": {
+      "query": "smart watch launch"
+    }
+  }'
+```
+
+`intelligence_signals` takes exactly one input field — `query`. Everything else (time window, scan size, platforms, query expansion) is managed by the service for this kind; sending any other field returns `400`. The other kinds (`intelligence_records`, `campaign_brief`, `llm_context`) accept filters and **require** an explicit `window` and `limit` — see [Intelligence Jobs](../guides/intelligence-jobs.mdx).
+
+Three possible responses:
+
+```jsonc
+// Fresh submit — new work queued, credits reserved at the estimate:
+{ "jobId": "0190bd6f-...", "status": "queued", "estimated_cost": 0.5, "statusUrl": "/intelligence/jobs/0190bd6f-..." }
+
+// Cache hit — identical input within freshness window, inline result:
+{ "jobId": "0190bd6f-...", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true }
+
+// Dedup — identical input already running, same jobId returned:
+{ "jobId": "0190bd6f-...", "status": "queued", "dedup": true, "statusUrl": "/intelligence/jobs/0190bd6f-..." }
+```
+
+Save the `jobId`:
+
+```bash
+JOB="0190bd6f-..."
+```
+
+## 3. Poll for the result
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
+```
+
+Poll every 2–5 seconds until `status` flips from `queued` → `running` → `succeeded`. Typical end-to-end time for `intelligence_signals`: 5–20 seconds.
+
+```jsonc
+// While running:
+{ "jobId": "0190bd6f-...", "kind": "intelligence_signals", "status": "running", "submittedAt": 1745859300000, "startedAt": 1745859302100 }
+
+// When done:
+{
+  "jobId": "0190bd6f-...",
+  "kind": "intelligence_signals",
+  "status": "succeeded",
+  "submittedAt": 1745859300000,
+  "startedAt":   1745859302100,
+  "completedAt": 1745859315400,
+  "result": { /* signals payload — see API reference */ }
+}
+```
+
+## 4. Skip the polling — use the MCP
+
+If you'd rather have Claude or Cursor handle the submit/poll loop for you, install the `kinetk` MCP server — see [MCP Installation](../mcp/installation.mdx). The MCP exposes the same `intelligence_signals` flow as a one-tool call with built-in polling and a slim, token-efficient response envelope.
+
+## 5. Trending narratives (precomputed read)
+
+<Callout intent="info" icon="rocket">
+  ### Coming soon
+
+  The trending narratives endpoints and full documentation are on the way. Check back shortly.
+</Callout>
+
+{/* ---------------------------------------------------------------------------
+COMMENTED OUT — restore when the precomputed narratives endpoints are ready.
 
 ```bash
 curl -H "x-api-key: $API_KEY" \
@@ -63,76 +137,12 @@ Sub-second response with the top 10 trending narrative clusters in the last 7 da
 }
 ```
 
-Windows: `24h | 7d | 30d`. Limit: 1–50.
+Windows: `7d | 30d`. Limit: 1–50.
 
-## 3. Submit an async intelligence job
-
-The retrieval / discovery / brief / context kinds all run async because they can take 5–20 seconds. Submit returns immediately with a `jobId`:
-
-```bash
-curl -X POST "$API_BASE/intelligence/jobs" \
-  -H "x-api-key: $API_KEY" \
-  -H "content-type: application/json" \
-  -d '{
-    "kind": "intelligence_discover",
-    "input": {
-      "query": "smart watch launch",
-      "platforms": ["TIKTOK", "INSTAGRAM"],
-      "limit": 1000,
-      "window": "7d"
-    }
-  }'
-```
-
-Three possible responses:
-
-```jsonc
-// Fresh submit — new work queued:
-{ "jobId": "0190bd6f-...", "status": "queued", "statusUrl": "/intelligence/jobs/0190bd6f-..." }
-
-// Cache hit — identical input within freshness window, inline result:
-{ "jobId": "0190bd6f-...", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true }
-
-// Dedup — identical input already running, same jobId returned:
-{ "jobId": "0190bd6f-...", "status": "queued", "dedup": true, "statusUrl": "/intelligence/jobs/0190bd6f-..." }
-```
-
-Save the `jobId`:
-
-```bash
-JOB="0190bd6f-..."
-```
-
-## 4. Poll for the result
-
-```bash
-curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
-```
-
-Poll every 2–5 seconds until `status` flips from `queued` → `running` → `succeeded`. Typical end-to-end time for `intelligence_discover`: 5–20 seconds.
-
-```jsonc
-// While running:
-{ "jobId": "0190bd6f-...", "kind": "intelligence_discover", "status": "running", "submittedAt": 1745859300000, "startedAt": 1745859302100 }
-
-// When done:
-{
-  "jobId": "0190bd6f-...",
-  "kind": "intelligence_discover",
-  "status": "succeeded",
-  "submittedAt": 1745859300000,
-  "startedAt":   1745859302100,
-  "completedAt": 1745859315400,
-  "result": { /* QueryNarrativeDiscoveryResponse — see API reference */ }
-}
-```
-
-## 5. Skip the polling — use the MCP
-
-If you'd rather have Claude or Cursor handle the submit/poll loop for you, install the `kinetk` MCP server — see [MCP Installation](../mcp/installation.mdx). The MCP exposes the same `intelligence_discover` flow as a one-tool call with built-in polling and a slim, token-efficient response envelope.
+--------------------------------------------------------------------------- */}
 
 ## Next steps
 
-- [Intelligence Jobs](../guides/intelligence-jobs.mdx) — the full async lifecycle, all four `kind` values, dedup + cache semantics.
-- [Narrative Intelligence](../guides/narrative-intelligence.mdx) — what `intelligence_discover` actually returns and how to read it.
+- [Intelligence Jobs](../guides/intelligence-jobs.mdx) — the full async lifecycle, all four `kind` values, dedup + cache semantics, billing.
+- [Narrative Intelligence](../guides/narrative-intelligence.mdx) — what `intelligence_signals` actually returns and how to read it.
 - [API Reference](/api-reference) — every endpoint, every field, every error shape.

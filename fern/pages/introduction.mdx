@@ -5,6 +5,10 @@ description: Public HTTP API and MCP server for the KINETK Knowledge Graph.
 
 The **KINETK Graph Service API** is the public surface of the KINETK Knowledge Graph — a multimodal content intelligence platform that retrieves, clusters, and explains social-media narratives across TikTok, Instagram, YouTube, Reddit, Pinterest, X, and more.
 
+<Card title="Get Your API Key" icon="key" href="https://platform.kinetk.ai">
+  Create a key in the KINETK platform to start making requests.
+</Card>
+
 This site documents two ways to use it:
 
 - **HTTP API** — REST endpoints behind an API key. Best for backends, dashboards, and scheduled jobs.
@@ -20,11 +24,11 @@ Both share the same backend, the same auth model, and the same caching/freshness
 | Precomputed trending narratives | `GET /narratives/trending` | sync |
 | Filtered narrative search | `GET /narratives/search` | sync |
 | One narrative with content + creators + breakdown | `GET /narratives/{id}` | sync |
-| One creator profile by id | `GET /creators/{id}` | sync |
-| Batch creator lookup (up to 500 ids) | `GET /creators?ids=...` | sync |
-| Heavy retrieval: `intelligence_search`, `intelligence_discover`, `campaign_brief`, `llm_context` | `POST /intelligence/jobs` + `GET /intelligence/jobs/{id}` | async |
+| Heavy retrieval: `intelligence_records`, `intelligence_signals`, `campaign_brief`, `llm_context` | `POST /intelligence/jobs` + `GET /intelligence/jobs/{id}` | async |
 
 The async path solves the API Gateway 29-second ceiling: submit returns immediately with a `jobId`, then poll until `status: succeeded`. Identical inputs within a per-kind freshness window are served from cache. See [Intelligence Jobs](./guides/intelligence-jobs.mdx) for the full lifecycle.
+
+`intelligence_records` returns ranked **content objects** — each with normalized relevance/engagement/recency signals and the score they're sorted by. See [The Content Object](./guides/content-object.mdx) for what every field means and exactly how items are ranked.
 
 ## When to use the API vs the MCP
 
@@ -45,7 +49,7 @@ The production API is served at:
 https://api.kinetk.ai/graph
 ```
 
-Every endpoint requires an `x-api-key` header. We recommend exporting both as env vars so the examples elsewhere in these docs work directly:
+Every endpoint requires your secret key in the `x-api-key` header. We recommend exporting these as env vars so the examples elsewhere in these docs work directly:
 
 ```bash
 export API_BASE="https://api.kinetk.ai/graph"

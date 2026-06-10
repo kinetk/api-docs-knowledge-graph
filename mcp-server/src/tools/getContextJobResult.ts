@@ -39,7 +39,9 @@ export type PendingEnvelope = {
 
 export type FailedEnvelope = {
   jobId: string;
-  kind: JobKind;
+  // "unknown" on the expired (410) path, where graph-service no longer
+  // reports which kind the job was.
+  kind: JobKind | "unknown";
   status: "failed";
   error: string;
 };
@@ -108,7 +110,7 @@ type FetchedJob =
   | { status: "running"; kind: JobKind; submittedAt: number }
   | { status: "failed"; kind: JobKind; submittedAt: number; error?: string }
   | { status: "succeeded"; kind: JobKind; submittedAt: number; completedAt?: number; result: unknown }
-  | { status: "expired"; kind: JobKind };
+  | { status: "expired"; kind: JobKind | "unknown" };
 
 async function fetchJob(client: GraphServiceClient, jobId: string): Promise<FetchedJob> {
   try {
@@ -133,9 +135,9 @@ async function fetchJob(client: GraphServiceClient, jobId: string): Promise<Fetc
     // 410 from graph-service means TTL expired. We translate that into a
     // failure shape rather than letting the agent see a raw HTTP error.
     if (isGraphServiceError(err) && err.statusCode === 410) {
-      // We don't know the kind in this branch; the agent likely doesn't care
-      // what was supposed to be there — just that it's gone.
-      return { status: "expired", kind: "intelligence_search" };
+      // graph-service no longer reports the kind once the result has
+      // expired, so say so rather than guessing one.
+      return { status: "expired", kind: "unknown" };
     }
     throw err;
   }

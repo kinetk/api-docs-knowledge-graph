@@ -25,6 +25,8 @@ navigation:
             path: ./pages/getting-started/quickstart.mdx
       - section: Guides
         contents:
+          - page: The Content Object
+            path: ./pages/guides/content-object.mdx
           - page: Narrative Intelligence
             path: ./pages/guides/narrative-intelligence.mdx
           - page: Intelligence Jobs
@@ -70,3 +72,6 @@ navbar-links:
   - type: minimal
     text: kinetk.ai
     url: https://kinetk.ai
+  - type: filled
+    text: Get Your API Key
+    url: https://platform.kinetk.ai

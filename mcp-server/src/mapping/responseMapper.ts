@@ -16,12 +16,13 @@ export type SlimItem = {
   platform: string | null;
   title: string | null;
   description: string | null;
-  url: string | null;
   tags: string[];
   similarity: number | null;
   engagement: { views: number; likes: number; shares: number; comments: number };
   publishedAt: string | null;
-  creator: { handle: string | null; name: string | null; followerCount: number | null } | null;
+  // Creator identity (handle/name) is no longer exposed by the graph-service API,
+  // so we surface only the non-identifying follower count.
+  creator: { followerCount: number | null } | null;
 };
 
 export type SlimNarrative = {
@@ -49,6 +50,8 @@ export type SlimResult = {
   graph?: SlimGraph;
   narratives?: SlimNarrative[];
   insights?: string[];
+  tagInsights?: string[];
+  narrativeInsights?: string[];
   context?: unknown;
   brief?: unknown;
   retrieval?: { totalCandidates: number; returned: number; window: string | null };
@@ -68,9 +71,9 @@ export function mapJobResultToSlim(result: unknown, ctx: ResponseMapperContext):
     generatedAt: pickString(result, "generatedAt"),
   };
   switch (ctx.kind) {
-    case "intelligence_search":
+    case "intelligence_records":
       return { ...base, ...mapSearchResult(result) };
-    case "intelligence_discover":
+    case "intelligence_signals":
       return { ...base, ...mapDiscoverResult(result) };
     case "campaign_brief":
       return { ...base, ...mapCampaignBriefResult(result) };
@@ -91,16 +94,17 @@ function mapSearchResult(result: unknown): Partial<SlimResult> {
 
 function mapDiscoverResult(result: unknown): Partial<SlimResult> {
   const obj = asObject(result);
-  const insights = asArray(obj?.["insights"])
-    .filter((value): value is string => typeof value === "string")
-    .slice(0, 12);
+  // intelligence_signals is signals-only: the response carries the three insight
+  // prose arrays (+ envelope), not the underlying content/narratives/graphs.
+  const slimStrings = (key: string): string[] | undefined => {
+    const arr = asArray(obj?.[key]).filter((v): v is string => typeof v === "string").slice(0, 12);
+    return arr.length > 0 ? arr : undefined;
+  };
   return {
     query: pickString(obj, "query") ?? undefined,
-    items: mapItems(asArray(obj?.["content"])),
-    graph: mapGraph(asObject(obj?.["graph"]) ?? asObject(obj?.["contentGraph"])),
-    narratives: mapNarratives(asArray(obj?.["narratives"])),
-    insights: insights.length > 0 ? insights : undefined,
-    retrieval: mapRetrieval(asObject(obj?.["retrieval"]), pickString(obj, "window")),
+    insights: slimStrings("insights"),
+    tagInsights: slimStrings("tagInsights"),
+    narrativeInsights: slimStrings("narrativeInsights"),
   };
 }
 
@@ -135,7 +139,6 @@ function mapItems(rows: unknown[]): SlimItem[] {
       platform: pickString(r, "platform"),
       title: pickString(r, "title"),
       description: pickString(r, "description"),
-      url: pickString(r, "contentUrl"),
       tags: asArray(r["tags"]).filter((t): t is string => typeof t === "string"),
       similarity: pickNumber(r, "similarity"),
       engagement: {
@@ -151,11 +154,10 @@ function mapItems(rows: unknown[]): SlimItem[] {
 }
 
 function buildCreator(r: Record<string, unknown>): SlimItem["creator"] {
-  const handle = pickString(r, "authorHandle");
-  const name = pickString(r, "authorName");
+  // Creator handle/name are no longer returned by the API — keep only follower count.
   const followerCount = pickNumber(r, "followerCount");
-  if (!handle && !name && followerCount === null) return null;
-  return { handle, name, followerCount };
+  if (followerCount === null) return null;
+  return { followerCount };
 }
 
 function mapGraph(graph: Record<string, unknown> | null): SlimGraph | undefined {

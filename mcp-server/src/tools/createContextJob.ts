@@ -18,7 +18,7 @@ export type CachedJobResult = {
 export type CreateContextJobOutput = {
   jobId: string;
   kind: JobKind;
-  status: "queued" | "running" | "succeeded";
+  status: "queued" | "running" | "succeeded" | "failed";
   fromCache: boolean;
   statusUrl?: string;
 };
@@ -60,7 +60,9 @@ export async function createContextJob(
   return {
     jobId: response.jobId,
     kind,
-    status: response.status === "failed" ? "queued" : response.status,
+    // Pass the backend status through verbatim — a failed submit must not be
+    // reported as queued.
+    status: response.status,
     fromCache: Boolean(response.fromCache),
     statusUrl: response.statusUrl,
   };
