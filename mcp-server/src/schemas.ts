@@ -39,16 +39,16 @@ const optionsSchema = z
 // Explicit `limit` for the per-record-billed kinds (intelligence_records,
 // campaign_brief, llm_context). Required — never defaulted client-side: jobs
 // are billed per record, so the caller must state how many records they are
-// buying. Bounds mirror the backend's (100–50000).
+// buying. Bounds mirror the backend's external cap (100–10000).
 const limitSchema = (kind: string) =>
   z
     .number({
-      required_error: `limit is required for ${kind} — the number of records to retrieve and pay for (between 100 and 50000)`,
-      invalid_type_error: `limit must be a number between 100 and 50000 (records to retrieve for ${kind})`,
+      required_error: `limit is required for ${kind} — the number of records to retrieve and pay for (between 100 and 10000)`,
+      invalid_type_error: `limit must be a number between 100 and 10000 (records to retrieve for ${kind})`,
     })
-    .int("limit must be an integer (between 100 and 50000)")
+    .int("limit must be an integer (between 100 and 10000)")
     .min(100, "limit must be at least 100")
-    .max(50000, "limit must be at most 50000");
+    .max(10000, "limit must be at most 10000");
 
 // Retrieval kinds: query is required. Two parallel single-kind schemas so
 // `z.discriminatedUnion("kind", ...)` can use them — discriminatedUnion
@@ -159,9 +159,9 @@ export const createContextJobJsonSchema = {
     limit: {
       type: "integer",
       minimum: 100,
-      maximum: 50000,
+      maximum: 10000,
       description:
-        "REQUIRED for intelligence_records, campaign_brief and llm_context: how many records to retrieve, between 100 and 50000. Jobs are billed per record, so there is NO default — you are choosing the spend (1000 is a sensible starting point). Not accepted for intelligence_signals (its scan size is server-fixed).",
+        "REQUIRED for intelligence_records, campaign_brief and llm_context: how many records to retrieve, between 100 and 10000. Jobs are billed per record, so there is NO default — you are choosing the spend (1000 is a sensible starting point). Not accepted for intelligence_signals (its scan size is server-fixed).",
     },
     audience: { type: "string", description: "Target audience description (campaign kinds). Carried into the response context for downstream LLM use; not a retrieval filter." },
     tone: { type: "string", description: "Desired tone (campaign kinds). Carried into the response context; not a retrieval filter." },

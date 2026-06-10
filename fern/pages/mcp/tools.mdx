@@ -22,14 +22,14 @@ Submit an async job. Pick `kind` by **what you want back**:
 
 - `intelligence_records` and `intelligence_signals` require `query` (string).
 - `campaign_brief` and `llm_context` require `campaign` (string — the campaign name).
-- `intelligence_records`, `campaign_brief` and `llm_context` also require `limit` (integer, 100–50000) — how many records to retrieve. Jobs are billed per record, so there is **no default**: you choose the spend (`1000` is a sensible starting point). `intelligence_signals` does not accept `limit` (its scan size is server-fixed).
+- `intelligence_records`, `campaign_brief` and `llm_context` also require `limit` (integer, 100–10000) — how many records to retrieve. Jobs are billed per record, so there is **no default**: you choose the spend (`1000` is a sensible starting point). A limit above `10000` is rejected with a 400. `intelligence_signals` does not accept `limit` (its scan size is server-fixed).
 
 Filters and options apply to `intelligence_records`, `campaign_brief` and `llm_context`. `intelligence_signals` takes **only** `query` — its time window, scan size, platforms and query expansion are managed by the service, and the MCP drops any filters/options before submit so the call still succeeds.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `platforms` | `string[]` | all | E.g. `["TIKTOK", "INSTAGRAM"]` |
-| `limit` | `number` | (required) | How many records to retrieve, 100–50000. Sent to the backend as-is — never defaulted by the MCP, because jobs are billed per record and the caller chooses the spend. |
+| `limit` | `number` | (required) | How many records to retrieve, 100–10000. Sent to the backend as-is — never defaulted by the MCP, because jobs are billed per record and the caller chooses the spend. |
 | `window` | `"7d" \| "30d" \| "all"` | `"all"` (set by the MCP) | Time filter on `published_at`. The API **requires** an explicit window for these kinds; when you omit it, the MCP sends `"all"` (no time filter). |
 | `expandQuery` | `boolean` | `true` (server default) | LLM query expansion (`intelligence_records` only) |
 | `vectors` | `"all_media" \| string[]` | `"all_media"` | Which vector indexes the search fans out to |
