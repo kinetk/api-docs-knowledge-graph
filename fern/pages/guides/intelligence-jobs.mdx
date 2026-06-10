@@ -31,7 +31,7 @@ Input filters for the other three kinds (`intelligence_records`, `campaign_brief
 
 - `platforms`: e.g. `["TIKTOK", "INSTAGRAM"]`. Defaults to all.
 - `window`: `7d | 30d | all`. **Required** — there is no default; omitting it returns 400. Use `all` for no time filter. A `24h` window is coming soon.
-- `limit`: the number of records to retrieve, `100`–`50000`. **Required** — there is no default; omitting it returns 400. Jobs are billed per record, so the limit is how you choose your spend (`1000` is a sensible starting point).
+- `limit`: the number of records to retrieve, `100`–`10000`. **Required** — there is no default; omitting it returns 400, and a value above `10000` returns 400. Jobs are billed per record, so the limit is how you choose your spend (`1000` is a sensible starting point).
 - `expandQuery`: opt in to LLM-backed query expansion (`intelligence_records` only).
 
 ## Submit response shapes

@@ -36,7 +36,7 @@ function mapRetrievalInput(input: Extract<CreateContextJobInput, { kind: "intell
     query: input.query,
     // The backend requires an explicit limit (no server default — jobs are
     // billed per record, so the caller chooses the spend). The schema already
-    // enforced presence + bounds (100–50000); never defaulted here.
+    // enforced presence + bounds (100–10000); never defaulted here.
     limit: input.limit,
     // The backend requires an explicit window (no server default). When the
     // agent doesn't pick one, "all" (no time filter) is the cheapest and most
@@ -57,7 +57,7 @@ function mapCampaignInput(input: Extract<CreateContextJobInput, { kind: "campaig
   const { filters } = input;
   const mapped: Record<string, unknown> = {
     // The backend requires an explicit limit (no server default — billed per
-    // record; the caller chooses the spend). Presence + bounds (100–50000)
+    // record; the caller chooses the spend). Presence + bounds (100–10000)
     // already enforced by the schema; never defaulted here.
     limit: input.limit,
     // The backend requires an explicit window (no server default); "all"
