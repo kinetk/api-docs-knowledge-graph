@@ -5,6 +5,15 @@ description: What "narratives" mean in the Graph Service and how to use them.
 
 A **narrative** in the KINETK Graph is a cluster of related social-media content unified by a shared idea — a topic, framing, or moment. Narratives are computed by combining semantic similarity (multimodal vector embeddings) with tag and creator co-occurrence, then labeled and summarized by an LLM.
 
+<Callout intent="info" icon="rocket">
+  ### Coming soon
+
+  The Narrative Intelligence endpoints and full documentation are on the way. Check back shortly.
+</Callout>
+
+{/* ---------------------------------------------------------------------------
+COMMENTED OUT — restore when Narrative Intelligence docs are ready.
+
 There are two ways to access narratives:
 
 - **Precomputed reads** — `/narratives/trending`, `/narratives/search`, `/narratives/{id}`. Sub-second. Refreshed on a 6-hour schedule. Best for dashboards.
@@ -101,3 +110,5 @@ The retrieval kinds (`intelligence_records`, `intelligence_signals`) accept a fr
 ```
 
 Both run the same discovery pipeline under the hood; the campaign kinds layer a campaign-context adapter on top and (for `campaign_brief`) persist the result. See the [API Reference](/api-reference) for full input shapes.
+
+--------------------------------------------------------------------------- */}

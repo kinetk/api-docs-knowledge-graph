@@ -34,38 +34,7 @@ Expected response (status `200`, latency under 1 second):
 
 If you get `403 { "message": "Forbidden" }`, the API key isn't being sent — check the header name and value.
 
-## 2. Trending narratives (precomputed read)
-
-```bash
-curl -H "x-api-key: $API_KEY" \
-  "$API_BASE/narratives/trending?window=7d&limit=10"
-```
-
-Sub-second response with the top 10 trending narrative clusters in the last 7 days:
-
-```json
-{
-  "window": "7d",
-  "narratives": [
-    {
-      "id": "1234",
-      "label": "Smartwatch fitness accountability",
-      "summary": "Creators in the smartwatch + fitness space leaning into community accountability framing...",
-      "window": "7d",
-      "trendScore": 0.82,
-      "momentumScore": 0.74,
-      "topTags": ["smartwatch", "fitness"],
-      "contentCount": 28,
-      "creatorCount": 16,
-      "totalEngagement": 1240501
-    }
-  ]
-}
-```
-
-Windows: `7d | 30d`. Limit: 1–50.
-
-## 3. Submit an async intelligence job
+## 2. Submit an async intelligence job
 
 The records / signals / brief / context kinds all run async because they can take 5–20 seconds. Submit returns immediately with a `jobId`:
 
@@ -102,7 +71,7 @@ Save the `jobId`:
 JOB="0190bd6f-..."
 ```
 
-## 4. Poll for the result
+## 3. Poll for the result
 
 ```bash
 curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
@@ -126,9 +95,51 @@ Poll every 2–5 seconds until `status` flips from `queued` → `running` → `s
 }
 ```
 
-## 5. Skip the polling — use the MCP
+## 4. Skip the polling — use the MCP
 
 If you'd rather have Claude or Cursor handle the submit/poll loop for you, install the `kinetk` MCP server — see [MCP Installation](../mcp/installation.mdx). The MCP exposes the same `intelligence_signals` flow as a one-tool call with built-in polling and a slim, token-efficient response envelope.
+
+## 5. Trending narratives (precomputed read)
+
+<Callout intent="info" icon="rocket">
+  ### Coming soon
+
+  The trending narratives endpoints and full documentation are on the way. Check back shortly.
+</Callout>
+
+{/* ---------------------------------------------------------------------------
+COMMENTED OUT — restore when the precomputed narratives endpoints are ready.
+
+```bash
+curl -H "x-api-key: $API_KEY" \
+  "$API_BASE/narratives/trending?window=7d&limit=10"
+```
+
+Sub-second response with the top 10 trending narrative clusters in the last 7 days:
+
+```json
+{
+  "window": "7d",
+  "narratives": [
+    {
+      "id": "1234",
+      "label": "Smartwatch fitness accountability",
+      "summary": "Creators in the smartwatch + fitness space leaning into community accountability framing...",
+      "window": "7d",
+      "trendScore": 0.82,
+      "momentumScore": 0.74,
+      "topTags": ["smartwatch", "fitness"],
+      "contentCount": 28,
+      "creatorCount": 16,
+      "totalEngagement": 1240501
+    }
+  ]
+}
+```
+
+Windows: `7d | 30d`. Limit: 1–50.
+
+--------------------------------------------------------------------------- */}
 
 ## Next steps
 
