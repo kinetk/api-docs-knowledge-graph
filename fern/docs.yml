@@ -72,3 +72,6 @@ navbar-links:
   - type: minimal
     text: kinetk.ai
     url: https://kinetk.ai
+  - type: filled
+    text: Get Your API Key
+    url: https://platform.kinetk.ai
