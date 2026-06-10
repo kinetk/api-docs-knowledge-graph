@@ -45,7 +45,7 @@ Filters and options apply to `intelligence_records`, `campaign_brief` and `llm_c
 }
 ```
 
-If the backend has a fresh cached run for this input, `status` is `succeeded` and `fromCache: true` — `get_context_job_result` returns in O(1) on the next call.
+If the backend has a fresh cached run for this input, `status` is `succeeded` and `fromCache: true` — `get_context_job_result` returns in O(1) on the next call. For `intelligence_records` cache-hits, the submit response carries the download envelope (`resultUrl` etc.) rather than an inline result; `get_context_job_result` fetches it transparently.
 
 ### Example agent prompt
 
@@ -85,12 +85,21 @@ Fetch the result. Defaults to the **slim envelope** (token-efficient).
 | `jobId` | string | (required) | From `create_context_job` |
 | `verbose` | boolean | `false` | If `true`, returns the full untouched graph-service payload |
 
+### Result fetching for `intelligence_records`
+
+For `intelligence_records`, the API returns a presigned `resultUrl` rather than an inline result. The MCP server fetches this URL automatically — you do not need to download it yourself. Behaviorally:
+
+- **Transparent fetch:** `get_context_job_result` downloads the S3 object behind `resultUrl` and passes the parsed JSON to the slim mapper, exactly as if the result had been inline.
+- **Re-poll on 403:** if the presigned URL has expired (S3 returns `403`), the MCP re-polls the status endpoint once to obtain a fresh URL, then retries the download. If the second attempt also fails, a failed envelope is returned.
+- **Verbose mode:** set `verbose: true` to receive the full status envelope (including `resultUrl`, `resultBytes`, `resultExpiresAt`, `actualRecordsReturned`) plus the downloaded result body. Useful for inspecting metadata or fetching the URL yourself.
+- **Unexpected shape:** if a succeeded `intelligence_records` response carries neither `result` nor `resultUrl`, the MCP surfaces a failed envelope with `error: "unexpected job result shape"` rather than silently returning empty content.
+
 ### Returns (slim envelope)
 
 The envelope shape depends on `kind`:
 
 ```jsonc
-// intelligence_records → the matching content items
+// intelligence_records → the matching content items (fetched from resultUrl automatically)
 {
   "jobId": "...", "kind": "intelligence_records", "status": "completed",
   "items": [
@@ -123,8 +132,10 @@ creator carries only a non-identifying `followerCount`.
 
 ### Returns (verbose)
 
-Set `verbose: true` for the full untouched graph-service payload for the kind —
-see the [API Reference](/api-reference) for the complete response shapes.
+Set `verbose: true` for the full untouched graph-service payload for the kind.
+For `intelligence_records` this includes the status envelope fields (`resultUrl`,
+`resultBytes`, `resultExpiresAt`, `actualRecordsReturned`) alongside the
+downloaded result body — see the [API Reference](/api-reference) for complete shapes.
 
 ### Pending behavior
 

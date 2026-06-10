@@ -3,7 +3,7 @@ title: Quickstart
 description: Your first request — from health check to running an async intelligence job.
 ---
 
-Five minutes from `curl` to a real `intelligence_signals` result. Pick any HTTP client you like; we use `curl` here.
+Five minutes from `curl` to a real `intelligence_signals` result (or an `intelligence_records` download). Pick any HTTP client you like; we use `curl` here.
 
 ## Prerequisites
 
@@ -58,7 +58,7 @@ Three possible responses:
 // Fresh submit — new work queued, credits reserved at the estimate:
 { "jobId": "0190bd6f-...", "status": "queued", "estimated_cost": 0.5, "statusUrl": "/intelligence/jobs/0190bd6f-..." }
 
-// Cache hit — identical input within freshness window, inline result:
+// Cache hit — inline result (intelligence_signals / campaign_brief / llm_context):
 { "jobId": "0190bd6f-...", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true }
 
 // Dedup — identical input already running, same jobId returned:
@@ -81,19 +81,52 @@ Poll every 2–5 seconds until `status` flips from `queued` → `running` → `s
 
 ```jsonc
 // While running:
-{ "jobId": "0190bd6f-...", "kind": "intelligence_signals", "status": "running", "submittedAt": 1745859300000, "startedAt": 1745859302100 }
+{ "jobId": "0190bd6f-...", "kind": "intelligence_signals", "status": "running", "submittedAt": 1745859300, "startedAt": 1745859302 }
 
-// When done:
+// When done (intelligence_signals — result is inline):
 {
   "jobId": "0190bd6f-...",
   "kind": "intelligence_signals",
   "status": "succeeded",
-  "submittedAt": 1745859300000,
-  "startedAt":   1745859302100,
-  "completedAt": 1745859315400,
+  "submittedAt": 1745859300,
+  "startedAt":   1745859302,
+  "completedAt": 1745859318,
+  "charged": 0.5,
   "result": { /* signals payload — see API reference */ }
 }
 ```
+
+### `intelligence_records` — download the result from the URL
+
+For `intelligence_records` jobs, the succeeded response carries a `resultUrl` instead of an inline `result`. The URL is a presigned S3 link — download it with a plain GET (no `x-api-key` header needed):
+
+```jsonc
+// When done (intelligence_records — download envelope):
+{
+  "jobId": "0190bd6f-...",
+  "kind": "intelligence_records",
+  "status": "succeeded",
+  "submittedAt": 1745859300,
+  "completedAt": 1745859490,
+  "charged": 12.5,
+  "actualRecordsReturned": 4812,
+  "resultUrl": "https://kinetk-intelligence-job-results-….amazonaws.com/jobs/0190bd6f-….json?X-Amz-…",
+  "resultBytes": 18234567,
+  "resultExpiresAt": 1745860390
+}
+```
+
+```bash
+# Save to file:
+RESULT_URL=$(curl -s -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB" \
+  | jq -r '.resultUrl')
+curl -o result.json "$RESULT_URL"
+
+# Or pipe directly into jq:
+curl -s "$RESULT_URL" | jq '.content | length'
+```
+
+The URL expires ~15 minutes after it was issued (`resultExpiresAt`). A fresh URL is minted on every poll, so if you get a `403` from S3, re-poll the status endpoint and use the new `resultUrl`. Do not cache the URL — cache the downloaded JSON instead.
 
 ## 4. Skip the polling — use the MCP
 

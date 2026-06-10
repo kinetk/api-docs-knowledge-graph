@@ -44,7 +44,8 @@ const TOOLS = [
   {
     name: "get_context_job_result",
     description:
-      "Fetch the result of a completed context job. Returns a slim, LLM-optimized envelope by default — shape varies by kind: ranked content items (intelligence_records), insight signal arrays (intelligence_signals), or the campaign context/brief (campaign_brief, llm_context). Set verbose=true for the full untouched graph-service payload (more tokens). Returns status='pending' if the job is still running.",
+      "Fetch the result of a completed context job. Returns a slim, LLM-optimized envelope by default — shape varies by kind: ranked content items (intelligence_records), insight signal arrays (intelligence_signals), or the campaign context/brief (campaign_brief, llm_context). Set verbose=true for the full untouched graph-service payload (more tokens). Returns status='pending' if the job is still running.\n\n" +
+      "For intelligence_records jobs the result is stored in S3 and fetched transparently via a short-lived presigned URL (this tool handles that automatically, including a single retry if the URL has expired). If the result exceeds the MCP transport limit (50 MB) a failed envelope is returned with the resultUrl for out-of-band retrieval. Very large records results should be fetched directly via that URL.",
     inputSchema: getContextJobResultJsonSchema,
   },
 ];
@@ -56,7 +57,7 @@ async function main(): Promise<void> {
   const client = new GraphServiceClient({ baseUrl, apiKey, timeoutMs });
 
   const server = new Server(
-    { name: "kinetk-mcp-server", version: "0.1.0" },
+    { name: "kinetk-mcp-server", version: "0.2.0" },
     { capabilities: { tools: {} } }
   );
 

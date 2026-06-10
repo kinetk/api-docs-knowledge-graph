@@ -50,10 +50,14 @@ export async function createContextJob(
   const { kind, input } = mapCreateContextJobInput(parsed);
   const response = await client.submitJob(kind, input);
 
-  // Cache hit: graph-service returned the result inline (200 path in
-  // api/jobs.ts). Stash it so the agent's next get_context_job_result lands
-  // in O(1).
-  if (response.status === "succeeded" && response.result !== undefined) {
+  // Cache hit: graph-service returned the result inline (200 path in api/jobs.ts).
+  // Stash it so the agent's next get_context_job_result lands in O(1).
+  //
+  // intelligence_records cache-hits carry a download envelope (resultUrl) instead
+  // of inline result. The presigned URL is valid for ~15 min and must NOT be
+  // cached here — each poll mints a fresh URL. Let getContextJobResult re-poll
+  // the job to obtain a valid URL at call time.
+  if (response.status === "succeeded" && response.result !== undefined && kind !== "intelligence_records") {
     rememberCachedResult(response.jobId, kind, response.result);
   }
 

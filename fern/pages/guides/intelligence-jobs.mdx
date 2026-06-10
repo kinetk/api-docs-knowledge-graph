@@ -6,7 +6,7 @@ description: The async job lifecycle — submit, poll, cache, dedup.
 All heavy intelligence work runs through one async endpoint pair:
 
 - `POST /intelligence/jobs` — submit a job, get a `jobId` immediately.
-- `GET /intelligence/jobs/{id}` — poll status; once `succeeded`, the response carries the result.
+- `GET /intelligence/jobs/{id}` — poll status; once `succeeded`, the response carries the result or a download URL.
 
 This page covers the lifecycle, the four supported `kind` values, the cache + dedup semantics, and the failure modes.
 
@@ -18,7 +18,7 @@ The intelligence pipeline does real work: text embeddings, multimodal vector sea
 
 | `kind` | Input | Output | Cache window |
 |---|---|---|---|
-| `intelligence_records` | `query` + filters | The matching content items | 15 min |
+| `intelligence_records` | `query` + filters | The matching content items (downloaded via presigned URL) | 15 min |
 | `intelligence_signals` | `query` only | Insight signals only — LLM arbitrage lines | 1 h |
 | `campaign_brief` | `campaign` object | Persisted LLM-generated brief | 6 h |
 | `llm_context` | `campaign` object | Raw campaign context bundle (no generated brief) | 6 h |
@@ -47,9 +47,20 @@ HTTP 202
 HTTP 202
 { "jobId": "...", "status": "queued", "dedup": true, "statusUrl": "..." }
 
-// 3. Cache hit — succeeded result inline, no new run
+// 3. Cache hit — for intelligence_signals / campaign_brief / llm_context: inline result
 HTTP 200
 { "jobId": "...", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true, "charged": 1.2 }
+
+// 3b. Cache hit — for intelligence_records: download envelope (never inline)
+HTTP 200
+{
+  "jobId": "...", "kind": "intelligence_records", "status": "succeeded",
+  "fromCache": true, "charged": 1.2,
+  "actualRecordsReturned": 4812,
+  "resultUrl": "https://...",
+  "resultBytes": 18234567,
+  "resultExpiresAt": 1781120190
+}
 ```
 
 Always check the HTTP status (`200` vs `202`) and the optional `fromCache` / `dedup` flags before deciding whether to start polling.
@@ -72,20 +83,88 @@ curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
 
 Poll every 2–5 seconds. Status flows: `queued` → `running` → `succeeded` | `failed`.
 
+The response shape on `succeeded` differs by kind:
+
+### `intelligence_signals`, `campaign_brief`, `llm_context` — inline result
+
 ```jsonc
 // running
 { "jobId": "...", "kind": "intelligence_signals", "status": "running",
-  "submittedAt": 1745859300000, "startedAt": 1745859302100 }
+  "submittedAt": 1745859300, "startedAt": 1745859305 }
 
-// succeeded
+// succeeded — result is inline
 { "jobId": "...", "kind": "intelligence_signals", "status": "succeeded",
-  "submittedAt": 1745859300000, "startedAt": 1745859302100, "completedAt": 1745859315400,
+  "submittedAt": 1745859300, "startedAt": 1745859305, "completedAt": 1745859318,
+  "charged": 0.5,
   "result": { /* signals payload — see API reference */ } }
+```
 
-// failed
-{ "jobId": "...", "status": "failed",
-  "error": "embedding service failed (403): permission denied",
-  "submittedAt": ..., "startedAt": ..., "completedAt": ... }
+### `intelligence_records` — download envelope
+
+Records results are **never** returned inline. When a records job succeeds, the response carries a presigned S3 download URL instead:
+
+```jsonc
+// succeeded — download envelope (no inline result)
+{
+  "jobId": "...", "kind": "intelligence_records", "status": "succeeded",
+  "submittedAt": 1745859300, "startedAt": 1745859305, "completedAt": 1745859490,
+  "charged": 12.5,
+  "actualRecordsReturned": 4812,
+  "resultUrl": "https://kinetk-intelligence-job-results-….amazonaws.com/jobs/<jobId>.json?X-Amz-…",
+  "resultBytes": 18234567,
+  "resultExpiresAt": 1745860390
+}
+```
+
+Download the result with a plain GET — no `x-api-key` header, the URL is self-authenticating:
+
+```bash
+curl -o result.json "$RESULT_URL"
+# or pipe directly into jq:
+curl -s "$RESULT_URL" | jq '.content | length'
+```
+
+The downloaded object is JSON with `Content-Type: application/json`. Its shape is:
+
+```jsonc
+{
+  "content": [
+    {
+      "id": "uuid",
+      "platform": "TIKTOK",
+      "title": "...",
+      "description": "...",
+      "tags": ["smartwatch", "fitness"],
+      "similarity": 0.81,
+      "engagement": { "views": 12500, "likes": 800, "shares": 40, "comments": 60 },
+      "publishedAt": "2026-05-01T12:00:00.000Z",
+      "creator": { "followerCount": 120000 }
+      // ... additional fields per API reference
+    }
+    // ... more items
+  ],
+  "query": "smart watch launch",
+  "window": "30d",
+  "graph": { /* graph metadata */ },
+  "retrieval": { /* retrieval stats */ }
+}
+```
+
+Creator identity (handle/display name) and source URLs are never present; a creator carries only a non-identifying `followerCount`.
+
+#### URL semantics — read before caching
+
+- **15-minute expiry.** `resultExpiresAt` is a Unix timestamp (seconds). The URL stops working after that.
+- **Fresh URL on every poll.** A new presigned URL is minted each time you call the status endpoint. The URLs differ across polls — **do not cache the URL**. Cache the downloaded JSON instead, keyed by `jobId` + `completedAt`.
+- **On `403` from S3:** the URL expired between your poll and your download. Re-poll the status endpoint for a fresh `resultUrl`, then download again.
+- **`resultBytes`** tells you the byte size of the object before you fetch. Use it to pre-allocate buffers or show download progress.
+
+### `failed`
+
+```jsonc
+{ "jobId": "...", "kind": "intelligence_records", "status": "failed",
+  "submittedAt": 1745859300, "startedAt": 1745859305, "completedAt": 1745859350,
+  "error": "job exceeded the maximum processing time; reduce limit or narrow the window" }
 ```
 
 Status response codes:
@@ -98,7 +177,7 @@ Status response codes:
 
 ## Cache semantics
 
-Submit computes `inputHash = sha256(canonicalJson({ kind, input }))` and checks for a recent successful job with the same hash. If one exists within the per-kind freshness window above, the cached result is returned inline (status `200`, `fromCache: true`) — charged at the full rate. To get fresher data, vary the input (e.g. a different `window`) or wait for the freshness window to lapse.
+Submit computes `inputHash = sha256(canonicalJson({ kind, input }))` and checks for a recent successful job with the same hash. If one exists within the per-kind freshness window above, the cached result is returned synchronously (status `200`, `fromCache: true`) — charged at the full rate. For `intelligence_records` cache hits, the response is the download envelope (not inline). To get fresher data, vary the input (e.g. a different `window`) or wait for the freshness window to lapse.
 
 ## Dedup semantics
 
@@ -106,15 +185,9 @@ Two **concurrent** identical submits will both hit the dedup check. The first cr
 
 There's a small race window where two submits arriving in the same millisecond can both miss the dedup check and both queue. In that case both jobs run independently and produce identical results — the cost is duplicate work, not data corruption. This is documented as a v1 accepted trade-off.
 
-## Large results
-
-When a job's result exceeds 300 KB, the worker writes it to S3 and stores a pointer in DynamoDB. The status endpoint rehydrates transparently — your client sees the full result inline either way.
-
-If the S3 write fails, the worker writes a truncated preview envelope to DynamoDB and logs the spill failure server-side. This is rare; surface as `result.__truncated: true` in your client if you want defensive handling.
-
 ## TTL
 
-Job rows are deleted from DynamoDB ~24 hours after completion. After that, `GET /intelligence/jobs/{id}` returns `410 { "error": "job result expired" }`. Persist anything you need long-term on your side.
+Job rows are deleted from DynamoDB ~24 hours after completion. After that, `GET /intelligence/jobs/{id}` returns `410 { "error": "job result expired" }`. Persist anything you need long-term on your side — for `intelligence_records`, that means saving the downloaded JSON, not the `resultUrl` (the URL expires in ~15 minutes).
 
 ## Using the MCP instead
 
@@ -122,6 +195,6 @@ If polling-loop boilerplate is a pain — especially inside an AI coding agent �
 
 - `create_context_job` → `POST /intelligence/jobs` (handles cache hit, dedup, retries)
 - `get_context_job_status` → cheap poll
-- `get_context_job_result` → slim or verbose envelope
+- `get_context_job_result` → slim or verbose envelope; fetches the `resultUrl` automatically for `intelligence_records`
 
 See [MCP Installation](../mcp/installation.mdx).

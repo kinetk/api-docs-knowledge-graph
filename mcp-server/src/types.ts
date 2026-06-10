@@ -26,10 +26,24 @@ export type McpJobStatus = "queued" | "running" | "completed" | "failed" | "pend
 export type SubmitJobResponse = {
   jobId: string;
   status: BackendJobStatus;
+  /** Present on intelligence_records cache-hits so clients can route without a second call. */
+  kind?: JobKind;
   dedup?: boolean;
   fromCache?: boolean;
+  /** Inline result for signals/brief/context cache-hits. Never present for intelligence_records. */
   result?: unknown;
   statusUrl?: string;
+  /** Credits charged for this request (cache-hit at the actual cached cost). */
+  charged?: number;
+  // Download envelope — present on every succeeded intelligence_records response
+  // (submit cache-hit and status poll), and on brief/context/admin-signals
+  // responses when the payload would exceed the Lambda response limit.
+  /** Presigned S3 URL to download the job result JSON (~15-min expiry, regenerated each poll). */
+  resultUrl?: string;
+  /** Byte length of the S3 object that resultUrl points to. */
+  resultBytes?: number;
+  /** Unix timestamp (seconds) at which resultUrl expires. */
+  resultExpiresAt?: number;
 };
 
 // Shape of the JSON returned by `GET /intelligence/jobs/{id}`.
@@ -40,6 +54,19 @@ export type GetJobResponse = {
   submittedAt: number;
   startedAt?: number;
   completedAt?: number;
+  /** Inline result for signals/brief/context succeeded jobs. Never present for intelligence_records. */
   result?: unknown;
   error?: string;
+  /** Credits charged once the job settled (absent on unbilled or in-flight jobs). */
+  charged?: number;
+  /** Number of records returned by a succeeded intelligence_records job. */
+  actualRecordsReturned?: number;
+  // Download envelope — present on every succeeded intelligence_records response,
+  // and on brief/context/admin-signals responses when the payload exceeds 5 MB.
+  /** Presigned S3 URL to download the job result JSON (~15-min expiry, regenerated each poll). */
+  resultUrl?: string;
+  /** Byte length of the S3 object that resultUrl points to. */
+  resultBytes?: number;
+  /** Unix timestamp (seconds) at which resultUrl expires. */
+  resultExpiresAt?: number;
 };

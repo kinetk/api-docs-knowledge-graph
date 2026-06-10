@@ -1047,286 +1047,6 @@ components:
         - tier
         - window
       type: object
-    IIntelligenceRecordsJobResult:
-      additionalProperties: false
-      properties:
-        content:
-          items:
-            $ref: "#/components/schemas/PublicRankedContent"
-          type: array
-        expandedQueries:
-          items:
-            type: string
-          type: array
-        generatedAt:
-          type: string
-        graph:
-          additionalProperties: false
-          properties:
-            edges:
-              items:
-                additionalProperties: false
-                properties:
-                  source:
-                    type: string
-                  target:
-                    type: string
-                  type:
-                    enum:
-                      - contains
-                      - creator_posted
-                      - semantic_similarity
-                      - tag_overlap
-                      - tagged_with
-                    type: string
-                  weight:
-                    type: number
-                required:
-                  - source
-                  - target
-                  - type
-                  - weight
-                type: object
-              type: array
-            nodes:
-              items:
-                additionalProperties: false
-                properties:
-                  creatorId:
-                    type: number
-                  id:
-                    type: string
-                  label:
-                    type: string
-                  score:
-                    type: number
-                  type:
-                    enum:
-                      - content
-                      - creator
-                      - narrative
-                      - tag
-                    type: string
-                required:
-                  - id
-                  - label
-                  - type
-                type: object
-              type: array
-          required:
-            - edges
-            - nodes
-          type: object
-        query:
-          type: string
-        retrieval:
-          additionalProperties: false
-          properties:
-            candidatesSeen:
-              type: number
-            filteredBreakdown:
-              additionalProperties: false
-              properties:
-                canonical:
-                  type: number
-                platform:
-                  type: number
-                window:
-                  type: number
-              required:
-                - canonical
-                - platform
-                - window
-              type: object
-            filteredCandidates:
-              type: number
-            identityMatchedCandidates:
-              type: number
-            joinBreakdown:
-              additionalProperties: false
-              properties:
-                contentPlatformId:
-                  type: number
-                uuid:
-                  type: number
-                weaviateId:
-                  type: number
-              required:
-                - contentPlatformId
-                - uuid
-                - weaviateId
-              type: object
-            joinedResults:
-              type: number
-            matchedCandidates:
-              type: number
-            mergeMethod:
-              enum:
-                - reciprocal_rank_fusion
-              type: string
-            resultsReturned:
-              type: number
-            tagWidening:
-              additionalProperties: false
-              properties:
-                phaseAContentCount:
-                  type: number
-                skipped:
-                  type: boolean
-                source:
-                  enum:
-                    - none
-                    - phase_a_top_tags
-                    - query_hashtags
-                  type: string
-                widenTags:
-                  items:
-                    type: string
-                  type: array
-                widenedCount:
-                  type: number
-              required:
-                - phaseAContentCount
-                - skipped
-                - source
-                - widenTags
-                - widenedCount
-              type: object
-            unmatchedCandidates:
-              type: number
-            unmatchedSamples:
-              items:
-                additionalProperties: false
-                properties:
-                  contentId:
-                    type: string
-                    nullable: true
-                  contentPlatformId:
-                    type: string
-                    nullable: true
-                  distance:
-                    type: number
-                    nullable: true
-                  matchedBy:
-                    enum:
-                      - contentPlatformId
-                      - uuid
-                      - weaviateId
-                    type: string
-                    nullable: true
-                  mediaType:
-                    type: string
-                    nullable: true
-                  platform:
-                    type: string
-                    nullable: true
-                  postgresCanonicalUuid:
-                    type: string
-                    nullable: true
-                  postgresPlatform:
-                    type: string
-                    nullable: true
-                  postgresPublishedAt:
-                    type: string
-                    nullable: true
-                  postgresUuid:
-                    type: string
-                    nullable: true
-                  rawSimilarity:
-                    type: number
-                  reason:
-                    enum:
-                      - no_postgres_identity_match
-                      - postgres_row_filtered_canonical
-                      - postgres_row_filtered_platform
-                      - postgres_row_filtered_window
-                    type: string
-                  rrfScore:
-                    type: number
-                  sourceUrl:
-                    type: string
-                    nullable: true
-                  weaviateObjectId:
-                    type: string
-                    nullable: true
-                required:
-                  - contentId
-                  - contentPlatformId
-                  - distance
-                  - matchedBy
-                  - mediaType
-                  - platform
-                  - postgresCanonicalUuid
-                  - postgresPlatform
-                  - postgresPublishedAt
-                  - postgresUuid
-                  - rawSimilarity
-                  - reason
-                  - rrfScore
-                  - sourceUrl
-                  - weaviateObjectId
-                type: object
-              type: array
-            vectorDiagnostics:
-              items:
-                additionalProperties: false
-                properties:
-                  candidatesReturned:
-                    type: number
-                  error:
-                    type: string
-                  query:
-                    type: string
-                  status:
-                    enum:
-                      - failed
-                      - ok
-                    type: string
-                  targetVector:
-                    type: string
-                required:
-                  - candidatesReturned
-                  - query
-                  - status
-                  - targetVector
-                type: object
-              type: array
-            vectorTargets:
-              items:
-                type: string
-              type: array
-          required:
-            - candidatesSeen
-            - filteredBreakdown
-            - filteredCandidates
-            - identityMatchedCandidates
-            - joinBreakdown
-            - joinedResults
-            - matchedCandidates
-            - mergeMethod
-            - resultsReturned
-            - unmatchedCandidates
-            - vectorDiagnostics
-            - vectorTargets
-          type: object
-        type:
-          enum:
-            - kinetk.query_intelligence.search.v1
-          type: string
-        window:
-          enum:
-            - 30d
-            - 7d
-            - all
-          type: string
-      required:
-        - content
-        - generatedAt
-        - graph
-        - query
-        - type
-        - window
-      type: object
     IIntelligenceSignalsJobResult:
       additionalProperties: false
       properties:
@@ -1365,6 +1085,17 @@ components:
     IJobStatusResponse:
       additionalProperties: false
       properties:
+        actualRecordsReturned:
+          description: >-
+            Number of records returned by a succeeded `intelligence_records`
+            job.
+
+            Also present for other billed kinds that stamp a record count.
+          type: number
+        charged:
+          description: Credits charged once the job settled (absent on unbilled or
+            in-flight jobs).
+          type: number
         completedAt:
           type: number
         error:
@@ -1375,10 +1106,49 @@ components:
           $ref: "#/components/schemas/JobKind"
         result:
           anyOf:
-            - $ref: "#/components/schemas/IIntelligenceRecordsJobResult"
             - $ref: "#/components/schemas/IIntelligenceSignalsJobResult"
             - $ref: "#/components/schemas/ICampaignBriefJobResult"
             - $ref: "#/components/schemas/ILlmContextJobResult"
+          description: >-
+            Inline result for `intelligence_signals`, `campaign_brief`, and
+
+            `llm_context` succeeded jobs.  Never present for `intelligence_records` —
+
+            use `resultUrl` instead.
+        resultBytes:
+          description: >-
+            Byte length of the S3 object that `resultUrl` points to.  Use this
+            to
+
+            pre-allocate buffers or report download progress before fetching.
+          type: number
+        resultExpiresAt:
+          description: |-
+            Unix timestamp (seconds) at which `resultUrl` expires.  Re-poll this
+            endpoint before this time to obtain a new URL.
+          type: number
+        resultUrl:
+          description: >-
+            Presigned S3 URL to download the job result as
+            `IIntelligenceRecordsJobResult`
+
+            JSON.  Present on every succeeded `intelligence_records` response, and on
+
+            `campaign_brief` / `llm_context` / admin `intelligence_signals` responses
+
+            when the payload would exceed the Lambda response limit.
+
+
+            The URL expires approximately 15 minutes after issuance (see
+
+            `resultExpiresAt`).  A fresh URL is minted on every poll — do **not** cache
+
+            the URL; cache the downloaded JSON keyed by `jobId` + `completedAt`
+
+            instead.  On a `403` from S3, re-poll this endpoint to obtain a new URL.
+
+            The object schema is `IIntelligenceRecordsJobResult`.
+          type: string
         startedAt:
           type: number
         status:
@@ -1394,18 +1164,77 @@ components:
     IJobSubmitResponse:
       additionalProperties: false
       properties:
+        charged:
+          description: Credits charged for this request (cache-hit at the actual cached
+            cost).
+          type: number
         dedup:
           type: boolean
+        estimated_cost:
+          type: number
         fromCache:
           type: boolean
         jobId:
           type: string
+        kind:
+          description: >-
+            Present on `intelligence_records` cache-hits so clients can route
+            without
+
+            a second call.
+          enum:
+            - campaign_brief
+            - intelligence_records
+            - intelligence_signals
+            - llm_context
+          type: string
         result:
           anyOf:
-            - $ref: "#/components/schemas/IIntelligenceRecordsJobResult"
             - $ref: "#/components/schemas/IIntelligenceSignalsJobResult"
             - $ref: "#/components/schemas/ICampaignBriefJobResult"
             - $ref: "#/components/schemas/ILlmContextJobResult"
+          description: >-
+            Inline result for `intelligence_signals`, `campaign_brief`, and
+
+            `llm_context` cache-hits.  Never present for `intelligence_records` — use
+
+            `resultUrl` instead.
+        resultBytes:
+          description: >-
+            Byte length of the S3 object that `resultUrl` points to.  Use this
+            to
+
+            pre-allocate buffers or report download progress before fetching.
+          type: number
+        resultExpiresAt:
+          description: |-
+            Unix timestamp (seconds) at which `resultUrl` expires.  Re-poll this
+            endpoint before this time to obtain a fresh URL.
+          type: number
+        resultUrl:
+          description: >-
+            Presigned S3 URL to download the job result as
+            `IIntelligenceRecordsJobResult`
+
+            JSON.  Present on every succeeded `intelligence_records` response (submit
+
+            cache-hit and status poll), and on `campaign_brief` / `llm_context` /
+
+            admin `intelligence_signals` status responses when the payload would exceed
+
+            the Lambda response limit.
+
+
+            The URL expires approximately 15 minutes after issuance (see
+
+            `resultExpiresAt`).  A fresh URL is minted on every poll — do **not** cache
+
+            the URL; cache the downloaded JSON keyed by `jobId` + `completedAt`
+
+            instead.  On a `403` from S3, re-poll this endpoint to obtain a new URL.
+
+            The object schema is `IIntelligenceRecordsJobResult`.
+          type: string
         status:
           $ref: "#/components/schemas/JobStatus"
         statusUrl:
@@ -2037,83 +1866,6 @@ components:
         - 7d
         - all
       type: string
-    PublicRankedContent:
-      additionalProperties: false
-      properties:
-        authorReach:
-          type: number
-        commentCount:
-          type: number
-        contentType:
-          type: string
-          nullable: true
-        creatorId:
-          type: number
-          nullable: true
-        description:
-          type: string
-          nullable: true
-        engagementDepth:
-          type: number
-        engagementScore:
-          type: number
-        exampleRankingScore:
-          type: number
-        followerCount:
-          type: number
-          nullable: true
-        likeCount:
-          type: number
-        platform:
-          type: string
-          nullable: true
-        publishedAt:
-          type: string
-          nullable: true
-        rawSimilarity:
-          type: number
-        recencyScore:
-          type: number
-        relevance:
-          type: number
-        rrfScore:
-          type: number
-        shareCount:
-          type: number
-        similarity:
-          type: number
-        subjectMatch:
-          type: boolean
-        tags:
-          items:
-            type: string
-          type: array
-        textRerankScore:
-          type: number
-          nullable: true
-        title:
-          type: string
-          nullable: true
-        uuid:
-          type: string
-        viewCount:
-          type: number
-      required:
-        - authorReach
-        - commentCount
-        - engagementDepth
-        - engagementScore
-        - exampleRankingScore
-        - likeCount
-        - rawSimilarity
-        - recencyScore
-        - rrfScore
-        - shareCount
-        - similarity
-        - tags
-        - uuid
-        - viewCount
-      type: object
     "Record<string,number>":
       additionalProperties: false
       type: object

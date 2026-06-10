@@ -1,6 +1,6 @@
 {
   "name": "kinetk-mcp-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server that exposes the KINETK graph-service async-job API to AI agents via stdio.",
   "main": "dist/index.js",
   "bin": {

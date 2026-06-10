@@ -15,6 +15,10 @@ export type GetContextJobStatusOutput = {
   startedAt?: number;
   completedAt?: number;
   error?: string;
+  /** Number of records returned (intelligence_records succeeded jobs). */
+  actualRecordsReturned?: number;
+  /** Credits charged once the job settled (absent on unbilled or in-flight jobs). */
+  charged?: number;
 };
 
 export async function getContextJobStatus(
@@ -31,6 +35,8 @@ export async function getContextJobStatus(
     startedAt: job.startedAt,
     completedAt: job.completedAt,
     error: job.error,
+    actualRecordsReturned: job.actualRecordsReturned,
+    charged: job.charged,
   };
 }
 
