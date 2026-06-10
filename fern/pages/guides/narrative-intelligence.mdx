@@ -55,7 +55,7 @@ curl -X POST "$API_BASE/intelligence/jobs" \
   }'
 ```
 
-`intelligence_signals` takes exactly one input field — `query`. The time window (`all`), scan size, platform scope and query expansion are all fixed by the service for this kind; any other input field returns `400`. Bounded time windows (24h/7d/30d) are coming soon.
+`intelligence_signals` takes exactly one input field — `query`. The time window (`all`), scan size, platform scope and query expansion are all fixed by the service for this kind; any other input field returns `400`. Bounded time windows for this kind are coming soon.
 
 The discover pipeline runs all of the following before returning:
 
@@ -67,7 +67,7 @@ The discover pipeline runs all of the following before returning:
 6. **Analytics** — top tags, tag co-occurrence, narrative roles, creator amplifier scores, per-platform opportunities, tag arbitrage signals, attribute lifts.
 7. **LLM augmentation** — an LLM labels each cluster and writes 4–6 quantified arbitrage insight lines.
 
-The response (`QueryNarrativeDiscoveryResponse`) returns the **insight signals only** — the three LLM arbitrage arrays (`insights`, `tagInsights`, `narrativeInsights`). Steps 1–6 are computed to produce those insights but are not part of the response; for the raw matching content use `intelligence_records`. See the [API Reference](/api-reference) for the full schema.
+The response returns the **insight signals only** — the three LLM arbitrage arrays (`insights`, `tagInsights`, `narrativeInsights`). Steps 1–6 are computed to produce those insights but are not part of the response; for the raw matching content use `intelligence_records`. See the [API Reference](/api-reference) for the full schema.
 
 ## Records vs. signals
 
@@ -94,7 +94,8 @@ The retrieval kinds (`intelligence_records`, `intelligence_signals`) accept a fr
     "audience": "health-conscious millennials",
     "platforms": ["TIKTOK", "INSTAGRAM"],
     "tone": "premium but approachable",
-    "window": "30d"
+    "window": "30d",
+    "limit": 1000
   }
 }
 ```

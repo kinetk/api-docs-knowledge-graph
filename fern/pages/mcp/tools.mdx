@@ -11,10 +11,10 @@ Submit an async job. Pick `kind` by **what you want back**:
 
 | `kind` | Needs | Returns — use when |
 |---|---|---|
-| `intelligence_records` | `query` | The matching **content itself** — ranked posts/videos with platform, tags, engagement, similarity. Use when you want source material to read or cite. |
+| `intelligence_records` | `query` + `limit` | The matching **content itself** — ranked posts/videos with platform, tags, engagement, similarity. Use when you want source material to read or cite. |
 | `intelligence_signals` | `query` (only) | **Synthesized insight signals only** — LLM-written arbitrage takeaways (overall, tag-focused, narrative-focused). No raw content. Use when you want the analytical "so what". _The API accepts only `query` for this kind — any filters/options you pass are dropped client-side before submit._ |
-| `campaign_brief` | `campaign` | A finished, **persisted strategy brief** we generate (positioning, narratives, recommended creators, platform strategy, content angles) plus its context. Use when you want a ready-made written deliverable. |
-| `llm_context` | `campaign` | The raw assembled campaign **context bundle** (narratives, top tags, creators, representative content) with **no generated brief**. Use when *you* will write the strategy yourself — faster and cheaper than `campaign_brief` because it skips the generation step. |
+| `campaign_brief` | `campaign` + `limit` | A finished, **persisted strategy brief** we generate (positioning, narratives, recommended creators, platform strategy, content angles) plus its context. Use when you want a ready-made written deliverable. |
+| `llm_context` | `campaign` + `limit` | The raw assembled campaign **context bundle** (narratives, top tags, creators, representative content) with **no generated brief**. Use when *you* will write the strategy yourself — faster and cheaper than `campaign_brief` because it skips the generation step. |
 
 **Rule of thumb:** a `query` → `intelligence_records` (content) or `intelligence_signals` (insights); a `campaign` → `llm_context` (you synthesize) or `campaign_brief` (we synthesize).
 
@@ -22,14 +22,15 @@ Submit an async job. Pick `kind` by **what you want back**:
 
 - `intelligence_records` and `intelligence_signals` require `query` (string).
 - `campaign_brief` and `llm_context` require `campaign` (string — the campaign name).
+- `intelligence_records`, `campaign_brief` and `llm_context` also require `limit` (integer, 100–50000) — how many records to retrieve. Jobs are billed per record, so there is **no default**: you choose the spend (`1000` is a sensible starting point). `intelligence_signals` does not accept `limit` (its scan size is server-fixed).
 
 Filters and options apply to `intelligence_records`, `campaign_brief` and `llm_context`. `intelligence_signals` takes **only** `query` — its time window, scan size, platforms and query expansion are managed by the service, and the MCP drops any filters/options before submit so the call still succeeds.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `platforms` | `string[]` | all | E.g. `["TIKTOK", "INSTAGRAM"]` |
-| `window` | `"7d" \| "30d" \| "all"` | `"all"` (set by the MCP) | Time filter on `published_at`. The API **requires** an explicit window for these kinds; when you omit it, the MCP sends `"all"` (no time filter). The `24h` window is not yet available (coming soon). |
-| `topK` | `number` | 1000 | Maps to backend `limit`. Capped client-side at 1000 to keep agent payloads bounded. |
+| `limit` | `number` | (required) | How many records to retrieve, 100–50000. Sent to the backend as-is — never defaulted by the MCP, because jobs are billed per record and the caller chooses the spend. |
+| `window` | `"7d" \| "30d" \| "all"` | `"all"` (set by the MCP) | Time filter on `published_at`. The API **requires** an explicit window for these kinds; when you omit it, the MCP sends `"all"` (no time filter). |
 | `expandQuery` | `boolean` | `true` (server default) | LLM query expansion (`intelligence_records` only) |
 | `vectors` | `"all_media" \| string[]` | `"all_media"` | Which vector indexes the search fans out to |
 
@@ -123,8 +124,7 @@ creator carries only a non-identifying `followerCount`.
 ### Returns (verbose)
 
 Set `verbose: true` for the full untouched graph-service payload for the kind —
-see the [API Reference](/api-reference) for the complete schemas
-(`IntelligenceSearchResponse`, `QueryNarrativeDiscoveryResponse`, etc.).
+see the [API Reference](/api-reference) for the complete response shapes.
 
 ### Pending behavior
 

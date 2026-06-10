@@ -63,7 +63,7 @@ Sub-second response with the top 10 trending narrative clusters in the last 7 da
 }
 ```
 
-Windows: `24h | 7d | 30d`. Limit: 1–50.
+Windows: `7d | 30d`. Limit: 1–50.
 
 ## 3. Submit an async intelligence job
 
@@ -81,7 +81,7 @@ curl -X POST "$API_BASE/intelligence/jobs" \
   }'
 ```
 
-`intelligence_signals` takes exactly one input field — `query`. Everything else (time window, scan size, platforms, query expansion) is managed by the service for this kind; sending any other field returns `400`. The other kinds (`intelligence_records`, `campaign_brief`, `llm_context`) accept filters and **require** an explicit `window` — see [Intelligence Jobs](../guides/intelligence-jobs.mdx).
+`intelligence_signals` takes exactly one input field — `query`. Everything else (time window, scan size, platforms, query expansion) is managed by the service for this kind; sending any other field returns `400`. The other kinds (`intelligence_records`, `campaign_brief`, `llm_context`) accept filters and **require** an explicit `window` and `limit` — see [Intelligence Jobs](../guides/intelligence-jobs.mdx).
 
 Three possible responses:
 
@@ -122,7 +122,7 @@ Poll every 2–5 seconds until `status` flips from `queued` → `running` → `s
   "submittedAt": 1745859300000,
   "startedAt":   1745859302100,
   "completedAt": 1745859315400,
-  "result": { /* QueryNarrativeDiscoveryResponse — see API reference */ }
+  "result": { /* signals payload — see API reference */ }
 }
 ```
 

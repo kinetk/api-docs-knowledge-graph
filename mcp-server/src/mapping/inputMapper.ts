@@ -34,13 +34,16 @@ function mapRetrievalInput(input: Extract<CreateContextJobInput, { kind: "intell
   const { filters, options } = input;
   const mapped: Record<string, unknown> = {
     query: input.query,
+    // The backend requires an explicit limit (no server default — jobs are
+    // billed per record, so the caller chooses the spend). The schema already
+    // enforced presence + bounds (100–50000); never defaulted here.
+    limit: input.limit,
     // The backend requires an explicit window (no server default). When the
     // agent doesn't pick one, "all" (no time filter) is the cheapest and most
     // inclusive choice.
     window: filters?.window ?? "all",
   };
   if (filters?.platforms !== undefined) mapped.platforms = filters.platforms;
-  if (options?.topK !== undefined) mapped.limit = options.topK;
   if (options?.expandQuery !== undefined) mapped.expandQuery = options.expandQuery;
   if (options?.vectors !== undefined) mapped.vectors = options.vectors;
   if (options?.maxDistance !== undefined) mapped.maxDistance = options.maxDistance;
@@ -49,10 +52,14 @@ function mapRetrievalInput(input: Extract<CreateContextJobInput, { kind: "intell
 
 function mapCampaignInput(input: Extract<CreateContextJobInput, { kind: "campaign_brief" | "llm_context" }>): MappedSubmission {
   // CampaignBriefInput intentionally accepts a narrower set of fields than the
-  // retrieval pipeline. We omit options that don't apply (topK, vectors, etc.)
+  // retrieval pipeline. We omit options that don't apply (vectors, etc.)
   // — they'd be silently ignored downstream but better not to send noise.
   const { filters } = input;
   const mapped: Record<string, unknown> = {
+    // The backend requires an explicit limit (no server default — billed per
+    // record; the caller chooses the spend). Presence + bounds (100–50000)
+    // already enforced by the schema; never defaulted here.
+    limit: input.limit,
     // The backend requires an explicit window (no server default); "all"
     // (no time filter) when the agent doesn't pick one.
     window: filters?.window ?? "all",

@@ -30,8 +30,8 @@ The intelligence pipeline does real work: text embeddings, multimodal vector sea
 Input filters for the other three kinds (`intelligence_records`, `campaign_brief`, `llm_context`):
 
 - `platforms`: e.g. `["TIKTOK", "INSTAGRAM"]`. Defaults to all.
-- `window`: `7d | 30d | all`. **Required** — there is no default; omitting it returns 400. Use `all` for no time filter. The `24h` window is not yet available (coming soon) and returns 400.
-- `limit` / `topK`: max items to return. Default 1000, hard cap 1000 in the MCP client (configurable in direct HTTP).
+- `window`: `7d | 30d | all`. **Required** — there is no default; omitting it returns 400. Use `all` for no time filter. A `24h` window is coming soon.
+- `limit`: the number of records to retrieve, `100`–`50000`. **Required** — there is no default; omitting it returns 400. Jobs are billed per record, so the limit is how you choose your spend (`1000` is a sensible starting point).
 - `expandQuery`: opt in to LLM-backed query expansion (`intelligence_records` only).
 
 ## Submit response shapes
@@ -80,7 +80,7 @@ Poll every 2–5 seconds. Status flows: `queued` → `running` → `succeeded` |
 // succeeded
 { "jobId": "...", "kind": "intelligence_signals", "status": "succeeded",
   "submittedAt": 1745859300000, "startedAt": 1745859302100, "completedAt": 1745859315400,
-  "result": { /* QueryNarrativeDiscoveryResponse — see API reference */ } }
+  "result": { /* signals payload — see API reference */ } }
 
 // failed
 { "jobId": "...", "status": "failed",

@@ -38,7 +38,7 @@ Graph-service results can be 100s of KB. AI agents pay per token, so by default 
 - `intelligence_signals`: the LLM insight arrays only (`insights`, `tagInsights`, `narrativeInsights`) — no content rows, no graphs (the API returns signals only for this kind).
 - `campaign_brief` / `llm_context`: the campaign context (and, for `campaign_brief`, the generated brief).
 
-Skipped by default: raw vectors, full retrieval diagnostics, debug breakdowns. Pass `verbose: true` to `get_context_job_result` to get the untouched payload.
+Skipped by default: secondary analytics and per-item detail beyond the fields above. Pass `verbose: true` to `get_context_job_result` to get the untouched payload.
 
 ## Prompting tips
 
