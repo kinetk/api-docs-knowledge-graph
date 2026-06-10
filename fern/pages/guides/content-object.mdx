@@ -1,9 +1,9 @@
 ---
 title: The content object
-description: The ranked content item returned by intelligence_search — its signals and exactly how items are scored.
+description: The ranked content item returned by intelligence_records — its signals and exactly how items are scored.
 ---
 
-`intelligence_search` returns a `content` array of ranked items. Each item carries the source metadata (platform, title, tags, engagement counts, `publishedAt`, `creatorId`, …) plus a set of **normalized signals** and a single **ranking score** the list is sorted by.
+`intelligence_records` returns a `content` array of ranked items. Each item carries the source metadata (platform, title, tags, engagement counts, `publishedAt`, `creatorId`, …) plus a set of **normalized signals** and a single **ranking score** the list is sorted by.
 
 Every signal is normalized **within the result set** for that query — values are relative to the other items returned, not absolute.
 
@@ -51,7 +51,7 @@ The `content` list is returned sorted by `exampleRankingScore` descending.
 
 ## Relationship graph edges
 
-`intelligence_search` also returns a `graph` over the result set (see the [API Reference](/api-reference)). Two content nodes are linked by:
+`intelligence_records` also returns a `graph` over the result set (see the [API Reference](/api-reference)). Two content nodes are linked by:
 
 - **`semantic_similarity`** — when the cosine similarity of their media vectors is **≥ 0.84**.
 - **`tag_overlap`** — otherwise, when the Jaccard overlap of their tags is **≥ 0.28**.

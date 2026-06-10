@@ -32,11 +32,11 @@ The MCP intentionally surfaces only the async `intelligence/jobs` flow. The prec
 
 ## Why a slim envelope?
 
-`intelligence_discover` results can be 100s of KB — full vectors, every content row, every analytics breakdown. AI agents pay per token, so by default the MCP returns:
+Graph-service results can be 100s of KB. AI agents pay per token, so by default the MCP returns a slim envelope per kind:
 
-- Per-content: `id`, `platform`, `title`, `tags`, `similarity`, `engagement`, `creator`.
-- The narrative + tag + creator graphs (for `intelligence_discover`).
-- The LLM insights (for `intelligence_discover`).
+- `intelligence_records`: per-content rows (`id`, `platform`, `title`, `tags`, `similarity`, `engagement`, `creator`) plus the relationship `graph`.
+- `intelligence_signals`: the LLM insight arrays only (`insights`, `tagInsights`, `narrativeInsights`) — no content rows, no graphs (the API returns signals only for this kind).
+- `campaign_brief` / `llm_context`: the campaign context (and, for `campaign_brief`, the generated brief).
 
 Skipped by default: raw vectors, full retrieval diagnostics, debug breakdowns. Pass `verbose: true` to `get_context_job_result` to get the untouched payload.
 
@@ -45,7 +45,7 @@ Skipped by default: raw vectors, full retrieval diagnostics, debug breakdowns. P
 The LLM doesn't know to use the MCP unless you cue it. Two patterns work:
 
 1. **Name the MCP**: "Use **kinetk** to find trending content about luxury watches in the last 7 days."
-2. **Name the kind**: "Submit an `intelligence_discover` job via kinetk for `luxury watch culture 2026`."
+2. **Name the kind**: "Submit an `intelligence_signals` job via kinetk for `luxury watch culture 2026`."
 
 Without one of these cues, Claude/Cursor will answer from general knowledge and skip the MCP entirely — costing you nothing but giving you no real intelligence.
 

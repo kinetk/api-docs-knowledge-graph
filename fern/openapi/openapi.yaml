@@ -5,7 +5,7 @@ info:
   description: |
     Public HTTP API for the KINETK graph-service. Health/sync probe,
     precomputed narrative reads, and an async job queue for heavy
-    intelligence work (`intelligence_search`, `intelligence_discover`,
+    intelligence work (`intelligence_records`, `intelligence_signals`,
     `campaign_brief`, `llm_context`).
 
     Authentication: send your secret key in the `x-api-key` header on every
@@ -65,7 +65,7 @@ paths:
       description: >-
         Reads precomputed narrative clusters for a bounded window
         (`24h | 7d | 30d`; `all` is coerced to `7d`). For live retrieval, submit
-        `POST /intelligence/jobs` with `kind: intelligence_discover`.
+        `POST /intelligence/jobs` with `kind: intelligence_signals`.
       operationId: listTrendingNarratives
       parameters:
         - $ref: "#/components/parameters/Window"
@@ -94,7 +94,7 @@ paths:
         Free-text search over precomputed narrative clusters, ranked by
         relevance. Same `24h | 7d | 30d` window constraint as
         `/narratives/trending`. For live retrieval, use `POST /intelligence/jobs`
-        with `kind: intelligence_discover`.
+        with `kind: intelligence_signals`.
       operationId: searchNarratives
       parameters:
         - name: q
@@ -168,11 +168,22 @@ paths:
           reserved at the estimate. Poll `GET /intelligence/jobs/{id}`.
         - `402` — insufficient credits; body recommends how to fit your budget.
 
-        `window` (in `input`) is REQUIRED — it drives the credit price (up to a
-        10x premium for `24h`). `estimated_cost` is an upper bound; the final
-        charge is computed from records actually returned.
+        For `intelligence_records` / `campaign_brief` / `llm_context`, `window`
+        (in `input`) is REQUIRED — it drives the credit price (fresher windows
+        cost more). The `24h` window is not yet available (coming soon) and
+        returns 400. `estimated_cost` is an upper bound; the final charge is
+        computed from the records actually returned.
 
-        Freshness windows: `intelligence_search` 15 min, `intelligence_discover` 1 h, `campaign_brief` / `llm_context` 6 h.
+        Intelligence Signals (`intelligence_signals`): a flat **0.5 credits per request** —
+        `query` is the only input, and it always runs a fixed 3000-record scan at
+        the `all` window. If a run returns < 1500 records the job fails (422, full
+        refund, no signals).
+
+        Input validation is strict: any undeclared field, type mismatch, or
+        out-of-enum value is rejected with `400` (nothing is silently stripped or
+        coerced).
+
+        Freshness windows: `intelligence_records` 15 min, `intelligence_signals` 1 h, `campaign_brief` / `llm_context` 6 h.
       operationId: submitIntelligenceJob
       requestBody:
         required: true
@@ -351,15 +362,21 @@ components:
       type: string
       enum: [24h, 7d, 30d]
       default: 7d
-      description: Bounded window for precomputed narrative endpoints. `all` is coerced to `7d`.
+      description: >-
+        Bounded window for precomputed narrative endpoints. Only `24h`, `7d`,
+        `30d` are valid; any other value (e.g. `all`, `6d`) is rejected with 400.
+        Omitting it defaults to `7d`.
     QueryWindow:
       type: string
-      enum: [24h, 7d, 30d, all]
-      default: all
+      enum: [7d, 30d, all]
       description: >-
-        Time window for live-retrieval jobs. `all` disables the published-at
-        filter (Historical tier). REQUIRED on `POST /intelligence/jobs` — it sets
-        the credit price (yield/cost varies up to 10x by freshness).
+        Time window for live-retrieval jobs. REQUIRED in `input` for
+        `intelligence_records`, `campaign_brief` and `llm_context` submits —
+        there is no default; omitting it returns 400. `all` disables the
+        published-at filter. The window drives the credit price (fresher
+        windows cost more). The `24h` window is not yet available and is
+        coming soon; requesting it returns 400. `intelligence_signals` does
+        not accept a window at all — it is fixed to `all` by the service.
     HealthResponse:
       type: object
       required: [status, stage, db, sync, durationMs, timestamp]
@@ -643,7 +660,7 @@ components:
         only — combined, tag-focused and narrative-focused — plus a light
         metadata envelope. The underlying analytics (narratives, tags, creators,
         graphs) are computed internally to derive the insights but are not
-        exposed. For the raw enriched records use `intelligence_search`.
+        exposed. For the raw records use `intelligence_records`.
       required: [type, generatedAt, query, window, insights, tagInsights, narrativeInsights]
       properties:
         type:
@@ -850,7 +867,7 @@ components:
           $ref: "#/components/schemas/QueryWindow"
     CampaignBriefResponse:
       type: object
-      required: [id, createdAt, brief, context]
+      required: [id, createdAt, brief, context, recordCount]
       properties:
         id:
           type: integer
@@ -861,6 +878,9 @@ components:
           $ref: "#/components/schemas/CampaignBrief"
         context:
           $ref: "#/components/schemas/CampaignContext"
+        recordCount:
+          type: integer
+          description: Records retrieved to build the brief; the Intelligence Records charge is priced on this.
     CampaignBrief:
       type: object
       additionalProperties: true
@@ -953,7 +973,7 @@ components:
         `llm_context` payload — the assembled campaign context wrapped for direct
         injection into an LLM prompt. Same `context` block as `campaign_brief`,
         minus the generated brief.
-      required: [type, generatedAt, context]
+      required: [type, generatedAt, context, recordCount]
       properties:
         type:
           type: string
@@ -965,12 +985,15 @@ components:
           description: When the context was assembled.
         context:
           $ref: "#/components/schemas/CampaignContext"
+        recordCount:
+          type: integer
+          description: Records retrieved to build the context; the Intelligence Records charge is priced on this.
     JobKind:
       type: string
       description: Discriminator for which pipeline runs the job.
       enum:
-        - intelligence_search
-        - intelligence_discover
+        - intelligence_records
+        - intelligence_signals
         - campaign_brief
         - llm_context
     JobStatus:
@@ -990,8 +1013,8 @@ components:
       discriminator:
         propertyName: kind
         mapping:
-          intelligence_search: "#/components/schemas/IntelligenceSearchJobRequest"
-          intelligence_discover: "#/components/schemas/IntelligenceDiscoverJobRequest"
+          intelligence_records: "#/components/schemas/IntelligenceSearchJobRequest"
+          intelligence_signals: "#/components/schemas/IntelligenceDiscoverJobRequest"
           campaign_brief: "#/components/schemas/CampaignBriefJobRequest"
           llm_context: "#/components/schemas/LlmContextJobRequest"
     IntelligenceSearchJobRequest:
@@ -1001,31 +1024,37 @@ components:
       properties:
         kind:
           type: string
-          enum: [intelligence_search]
+          enum: [intelligence_records]
         input:
           $ref: "#/components/schemas/QueryIntelligenceRequest"
     IntelligenceDiscoverJobRequest:
       type: object
       required: [kind, input]
       description: >-
-        Intelligence-signals job: returns LLM-generated insight signals
-        (see QueryNarrativeDiscoveryResponse). Currently limited to
-        `window: all`; the 24h, 7d and 30d time windows are coming soon.
+        Intelligence Signals job (`intelligence_signals`): returns LLM-generated insight signals
+        (see QueryNarrativeDiscoveryResponse). A flat **0.5 credits per request**.
+        The request is a single field — `query`. Every other parameter is fixed
+        by the service: the historical `all` freshness window, a fixed
+        3000-record scan, all platforms, and query expansion. Passing any field
+        other than `query` is rejected with 400. Viability: if the run returns <
+        1500 records the job FAILS (422 on the status poll, full refund, no
+        signals — refine the query).
       properties:
         kind:
           type: string
-          enum: [intelligence_discover]
+          enum: [intelligence_signals]
         input:
-          allOf:
-            - $ref: "#/components/schemas/QueryIntelligenceRequest"
-            - type: object
-              properties:
-                window:
-                  type: string
-                  enum: [all]
-                  description: >-
-                    Currently limited to `all`. The 24h, 7d and 30d time windows
-                    are coming soon for intelligence_discover.
+          type: object
+          required: [query]
+          additionalProperties: false
+          properties:
+            query:
+              type: string
+              minLength: 1
+              description: >-
+                The natural-language topic to surface signals for. The only
+                accepted input field — window, limit, platforms and query
+                expansion are all server-controlled for this job kind.
     CampaignBriefJobRequest:
       type: object
       required: [kind, input]
@@ -1082,8 +1111,8 @@ components:
         result:
           description: |
             Per-kind result payload:
-            `intelligence_search` → `IntelligenceSearchResponse`,
-            `intelligence_discover` → `QueryNarrativeDiscoveryResponse`,
+            `intelligence_records` → `IntelligenceSearchResponse`,
+            `intelligence_signals` → `QueryNarrativeDiscoveryResponse`,
             `campaign_brief` → `CampaignBriefResponse`,
             `llm_context` → `LlmContextResponse`.
           oneOf:
@@ -1116,8 +1145,8 @@ components:
         result:
           description: |
             Present once `status: succeeded`. Per-kind payload:
-            `intelligence_search` → `IntelligenceSearchResponse`,
-            `intelligence_discover` → `QueryNarrativeDiscoveryResponse`,
+            `intelligence_records` → `IntelligenceSearchResponse`,
+            `intelligence_signals` → `QueryNarrativeDiscoveryResponse`,
             `campaign_brief` → `CampaignBriefResponse`,
             `llm_context` → `LlmContextResponse`.
             Large results are rehydrated transparently from object storage.
@@ -1136,42 +1165,56 @@ components:
           example: 2
         actualRecordsReturned:
           type: integer
-          description: Records the job returned, used to compute the dynamic final cost (Tier-1 only).
+          description: >-
+            Records the job actually used. For `intelligence_records` /
+            `campaign_brief` / `llm_context` this sets the dynamic per-record
+            final cost; `intelligence_signals` is a flat 0.5 credits per request
+            and ignores this for billing. Present on succeeded jobs.
     InsufficientCreditsResponse:
       type: object
       description: >-
         Returned with `402` when the account balance can't cover the call. The
         `recommendations` block tells the caller how to fit their remaining
-        budget — either a smaller `limit` (Tier 1) or a cheaper `window`.
-      required: [error, required, available, tier, window, recommendations]
+        budget — a smaller `limit`, or (intelligence_records only) a cheaper `window`.
+      required: [error, credits_required, credits_available, tier, window, recommendations]
       properties:
         error:
           type: string
           enum: [insufficient_credits]
-        required:
+        credits_required:
           type: number
           description: Credits the call would cost (upper-bound estimate).
           example: 4
-        available:
+        credits_available:
           type: number
           description: Credits currently available.
           example: 1.5
         tier:
           type: integer
           enum: [1, 2]
-          description: "1 = Enriched Records (priced by volume); 2 = Intelligence Signals (priced per signal)."
+          description: >-
+            Which intelligence kind priced this request. 1 = Intelligence
+            Records (`intelligence_records`) — priced per record; yield scales
+            with the freshness window (7d/30d/all). 2 = Intelligence Signals
+            (`intelligence_signals`) — a flat 0.5 credits per request (fixed
+            3000-record scan, window `all`).
         window:
           $ref: "#/components/schemas/QueryWindow"
         recommendations:
           type: object
+          description: >-
+            How to fit the call within the current balance. `maxLimitForWindow`
+            is the largest affordable `limit` for the requested window;
+            `alternativeWindows` (intelligence_records only — discover is window-locked) trades
+            freshness for volume.
           properties:
             maxLimitForWindow:
               type: integer
-              description: "Tier 1: largest `limit` affordable for the requested window with the current balance."
+              description: "Largest `limit` affordable for the requested window with the current balance."
               example: 450
             alternativeWindows:
               type: array
-              description: "Tier 1: per-window max affordable `limit`, so freshness can be traded for volume."
+              description: "intelligence_records only: per-window max affordable `limit`, so freshness can be traded for volume. Omitted for intelligence_signals (window-`all`-only)."
               items:
                 type: object
                 required: [window, maxLimit]
@@ -1180,17 +1223,6 @@ components:
                     $ref: "#/components/schemas/QueryWindow"
                   maxLimit:
                     type: integer
-            affordableWindows:
-              type: array
-              description: "Tier 2: windows whose per-signal cost the balance can cover, cheapest first."
-              items:
-                type: object
-                required: [window, cost]
-                properties:
-                  window:
-                    $ref: "#/components/schemas/QueryWindow"
-                  cost:
-                    type: number
             topUpUrl:
               type: string
               format: uri

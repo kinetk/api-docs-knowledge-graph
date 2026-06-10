@@ -71,9 +71,9 @@ export function mapJobResultToSlim(result: unknown, ctx: ResponseMapperContext):
     generatedAt: pickString(result, "generatedAt"),
   };
   switch (ctx.kind) {
-    case "intelligence_search":
+    case "intelligence_records":
       return { ...base, ...mapSearchResult(result) };
-    case "intelligence_discover":
+    case "intelligence_signals":
       return { ...base, ...mapDiscoverResult(result) };
     case "campaign_brief":
       return { ...base, ...mapCampaignBriefResult(result) };
@@ -94,7 +94,7 @@ function mapSearchResult(result: unknown): Partial<SlimResult> {
 
 function mapDiscoverResult(result: unknown): Partial<SlimResult> {
   const obj = asObject(result);
-  // intelligence_discover is signals-only: the response carries the three insight
+  // intelligence_signals is signals-only: the response carries the three insight
   // prose arrays (+ envelope), not the underlying content/narratives/graphs.
   const slimStrings = (key: string): string[] | undefined => {
     const arr = asArray(obj?.[key]).filter((v): v is string => typeof v === "string").slice(0, 12);

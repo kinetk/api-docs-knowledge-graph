@@ -3,16 +3,21 @@
 // input fails fast with a readable error rather than burning a Lambda invoke.
 //
 // `createContextJobInputSchema` is a discriminated union on `kind`: the two
-// retrieval kinds (intelligence_search / intelligence_discover) require
+// retrieval kinds (intelligence_records / intelligence_signals) require
 // `query`; the two campaign kinds (campaign_brief / llm_context) require
 // `campaign`. Everything else (filters, options) is shared and optional.
+// intelligence_signals is special: the backend accepts ONLY `query` for that
+// kind, so the input mapper silently drops filters/options before submit (the
+// tool descriptions say so) rather than letting the backend 400.
 
 import { z } from "zod";
 
+// `24h` is intentionally absent: the backend rejects it for non-admin keys
+// (coming soon publicly).
 const filtersSchema = z
   .object({
     platforms: z.array(z.string().min(1)).optional(),
-    window: z.enum(["24h", "7d", "30d", "all"]).optional(),
+    window: z.enum(["7d", "30d", "all"]).optional(),
   })
   .strict()
   .optional();
@@ -23,8 +28,7 @@ const optionsSchema = z
     expandQuery: z.boolean().optional(),
     vectors: z.union([z.literal("all_media"), z.array(z.string().min(1))]).optional(),
     maxDistance: z.number().nullable().optional(),
-    clusterCount: z.number().int().positive().max(50).optional(),
-    debug: z.boolean().optional(),
+    clusterCount: z.number().int().min(2).max(8).optional(),
   })
   .strict()
   .optional();
@@ -34,8 +38,8 @@ const optionsSchema = z
 // requires each branch to be a `ZodObject` with a literal discriminator.
 const intelligenceSearchSchema = z
   .object({
-    kind: z.literal("intelligence_search"),
-    query: z.string().min(1, "query is required for intelligence_search"),
+    kind: z.literal("intelligence_records"),
+    query: z.string().min(1, "query is required for intelligence_records"),
     filters: filtersSchema,
     options: optionsSchema,
   })
@@ -43,8 +47,8 @@ const intelligenceSearchSchema = z
 
 const intelligenceDiscoverSchema = z
   .object({
-    kind: z.literal("intelligence_discover"),
-    query: z.string().min(1, "query is required for intelligence_discover"),
+    kind: z.literal("intelligence_signals"),
+    query: z.string().min(1, "query is required for intelligence_signals"),
     filters: filtersSchema,
     options: optionsSchema,
   })
@@ -120,13 +124,13 @@ export const createContextJobJsonSchema = {
   properties: {
     kind: {
       type: "string",
-      enum: ["intelligence_search", "intelligence_discover", "campaign_brief", "llm_context"],
+      enum: ["intelligence_records", "intelligence_signals", "campaign_brief", "llm_context"],
       description:
-        "What to get back. intelligence_search = the matching content itself, ranked posts/videos (needs `query`). intelligence_discover = synthesized insight signals only, no raw content (needs `query`; time window 'all' only for now). campaign_brief = a finished strategy brief we generate + persist (needs `campaign`). llm_context = the raw campaign context bundle for YOU to synthesize from, no generated brief — faster/cheaper than campaign_brief (needs `campaign`). Rule of thumb: `query` → search or discover; `campaign` → llm_context or campaign_brief.",
+        "What to get back. intelligence_records = the matching content itself, ranked posts/videos (needs `query`). intelligence_signals = synthesized insight signals only, no raw content (needs `query` and ONLY `query` — filters/options are server-managed for this kind and silently dropped if sent). campaign_brief = a finished strategy brief we generate + persist (needs `campaign`). llm_context = the raw campaign context bundle for YOU to synthesize from, no generated brief — faster/cheaper than campaign_brief (needs `campaign`). Rule of thumb: `query` → records (content) or signals (insights); `campaign` → llm_context or campaign_brief.",
     },
     query: {
       type: "string",
-      description: "Natural-language query. Required for intelligence_search and intelligence_discover.",
+      description: "Natural-language query. Required for intelligence_records and intelligence_signals.",
     },
     campaign: {
       type: "string",
@@ -145,9 +149,9 @@ export const createContextJobJsonSchema = {
         },
         window: {
           type: "string",
-          enum: ["24h", "7d", "30d", "all"],
+          enum: ["7d", "30d", "all"],
           description:
-            "Time window. 'all' disables the published_at filter; bounded values keep only fresh content. Note: intelligence_discover currently supports 'all' only (other windows coming soon).",
+            "Time window. 'all' disables the published_at filter; bounded values keep only fresh content. The API requires an explicit window for intelligence_records, campaign_brief and llm_context — if you omit it, this MCP server defaults it to 'all'. A '24h' window is coming soon and is not yet accepted. Ignored for intelligence_signals (server-fixed to 'all').",
         },
       },
     },
@@ -156,22 +160,21 @@ export const createContextJobJsonSchema = {
       additionalProperties: false,
       properties: {
         topK: { type: "integer", minimum: 1, maximum: 1000, description: "Max ranked items to return. Forwarded to graph-service as `limit`; if omitted the server applies its own default (1000). MCP caps at 1000 to keep agent payloads token-bounded." },
-        expandQuery: { type: "boolean", description: "Run Anthropic 3-query expansion before vector search." },
+        expandQuery: { type: "boolean", description: "Run LLM query expansion before vector search." },
         vectors: {
           oneOf: [
             { type: "string", enum: ["all_media"] },
             { type: "array", items: { type: "string" } },
           ],
-          description: "Which Weaviate vectors to query.",
+          description: "Which vector indexes to query.",
         },
-        maxDistance: { type: ["number", "null"], description: "Cosine-distance cutoff (~0.35 typical)." },
+        maxDistance: { type: ["number", "null"], description: "Cosine-distance cutoff." },
         clusterCount: {
           type: "integer",
-          minimum: 1,
-          maximum: 50,
-          description: "Number of narrative clusters (intelligence_discover only).",
+          minimum: 2,
+          maximum: 8,
+          description: "Number of narrative clusters. Only meaningful for intelligence_signals, where all options are currently server-managed — accepted for forward compatibility but not forwarded.",
         },
-        debug: { type: "boolean", description: "Bypass dedup + cache." },
       },
     },
   },

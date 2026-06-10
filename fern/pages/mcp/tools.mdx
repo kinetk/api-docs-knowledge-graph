@@ -11,35 +11,34 @@ Submit an async job. Pick `kind` by **what you want back**:
 
 | `kind` | Needs | Returns — use when |
 |---|---|---|
-| `intelligence_search` | `query` | The matching **content itself** — ranked posts/videos with platform, tags, engagement, similarity. Use when you want source material to read or cite. |
-| `intelligence_discover` | `query` | **Synthesized insight signals only** — LLM-written arbitrage takeaways (overall, tag-focused, narrative-focused). No raw content. Use when you want the analytical "so what". _Currently supports `window: all` only; other time windows coming soon._ |
+| `intelligence_records` | `query` | The matching **content itself** — ranked posts/videos with platform, tags, engagement, similarity. Use when you want source material to read or cite. |
+| `intelligence_signals` | `query` (only) | **Synthesized insight signals only** — LLM-written arbitrage takeaways (overall, tag-focused, narrative-focused). No raw content. Use when you want the analytical "so what". _The API accepts only `query` for this kind — any filters/options you pass are dropped client-side before submit._ |
 | `campaign_brief` | `campaign` | A finished, **persisted strategy brief** we generate (positioning, narratives, recommended creators, platform strategy, content angles) plus its context. Use when you want a ready-made written deliverable. |
 | `llm_context` | `campaign` | The raw assembled campaign **context bundle** (narratives, top tags, creators, representative content) with **no generated brief**. Use when *you* will write the strategy yourself — faster and cheaper than `campaign_brief` because it skips the generation step. |
 
-**Rule of thumb:** a `query` → `intelligence_search` (content) or `intelligence_discover` (insights); a `campaign` → `llm_context` (you synthesize) or `campaign_brief` (we synthesize).
+**Rule of thumb:** a `query` → `intelligence_records` (content) or `intelligence_signals` (insights); a `campaign` → `llm_context` (you synthesize) or `campaign_brief` (we synthesize).
 
 ### Input
 
-- `intelligence_search` and `intelligence_discover` require `query` (string).
+- `intelligence_records` and `intelligence_signals` require `query` (string).
 - `campaign_brief` and `llm_context` require `campaign` (string — the campaign name).
 
-Common filters (work across all kinds):
+Filters and options apply to `intelligence_records`, `campaign_brief` and `llm_context`. `intelligence_signals` takes **only** `query` — its time window, scan size, platforms and query expansion are managed by the service, and the MCP drops any filters/options before submit so the call still succeeds.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `platforms` | `string[]` | all | E.g. `["TIKTOK", "INSTAGRAM"]` |
-| `window` | `"7d" \| "30d" \| "all"` | `"all"` | Time filter on `published_at`. The `24h` window is not yet available (coming soon). `intelligence_discover` accepts `all` only. |
+| `window` | `"7d" \| "30d" \| "all"` | `"all"` (set by the MCP) | Time filter on `published_at`. The API **requires** an explicit window for these kinds; when you omit it, the MCP sends `"all"` (no time filter). The `24h` window is not yet available (coming soon). |
 | `topK` | `number` | 1000 | Maps to backend `limit`. Capped client-side at 1000 to keep agent payloads bounded. |
-| `expandQuery` | `boolean` | false | Opt in to LLM-backed query expansion (search/discover only) |
-| `vectors` | `"all_media" \| "image" \| "video"` | `"all_media"` | Which target vectors the vector search fans out to |
-| `debug` | `boolean` | false | Bypass cache + dedup. Use sparingly. |
+| `expandQuery` | `boolean` | `true` (server default) | LLM query expansion (`intelligence_records` only) |
+| `vectors` | `"all_media" \| string[]` | `"all_media"` | Which vector indexes the search fans out to |
 
 ### Returns
 
 ```json
 {
   "jobId": "0190bd6f-1234-7abc-8def-9876543210ab",
-  "kind": "intelligence_discover",
+  "kind": "intelligence_signals",
   "status": "queued",
   "fromCache": false
 }
@@ -49,7 +48,7 @@ If the backend has a fresh cached run for this input, `status` is `succeeded` an
 
 ### Example agent prompt
 
-> Use kinetk to submit an `intelligence_discover` job for `luxury watch culture 2026` on TikTok and Instagram.
+> Use kinetk to submit an `intelligence_signals` job for `luxury watch culture 2026`.
 
 ## `get_context_job_status`
 
@@ -59,11 +58,11 @@ Cheap poll. Pass the `jobId` you got from `create_context_job`.
 
 ```jsonc
 // running
-{ "jobId": "...", "kind": "intelligence_discover", "status": "running",
+{ "jobId": "...", "kind": "intelligence_signals", "status": "running",
   "submittedAt": 1745859300000, "startedAt": 1745859302100 }
 
 // completed
-{ "jobId": "...", "kind": "intelligence_discover", "status": "completed",
+{ "jobId": "...", "kind": "intelligence_signals", "status": "completed",
   "submittedAt": ..., "startedAt": ..., "completedAt": 1745859315400 }
 
 // failed
@@ -90,9 +89,9 @@ Fetch the result. Defaults to the **slim envelope** (token-efficient).
 The envelope shape depends on `kind`:
 
 ```jsonc
-// intelligence_search → the matching content items
+// intelligence_records → the matching content items
 {
-  "jobId": "...", "kind": "intelligence_search", "status": "completed",
+  "jobId": "...", "kind": "intelligence_records", "status": "completed",
   "items": [
     {
       "id": "uuid",
@@ -108,9 +107,9 @@ The envelope shape depends on `kind`:
   ]
 }
 
-// intelligence_discover → insight signals only (no raw content)
+// intelligence_signals → insight signals only (no raw content)
 {
-  "jobId": "...", "kind": "intelligence_discover", "status": "completed",
+  "jobId": "...", "kind": "intelligence_signals", "status": "completed",
   "query": "...",
   "insights": ["..."],
   "tagInsights": ["..."],
@@ -133,21 +132,21 @@ If the job is still `queued` or `running` when called, returns `{ "status": "pen
 
 ### Expired
 
-If the job's TTL has passed (~24 h after completion), returns the underlying `410` from the API:
+If the job's TTL has passed (~24 h after completion), the API's `410` surfaces as a failed envelope (the API no longer reports the kind at that point):
 
 ```json
-{ "error": "job result expired" }
+{ "jobId": "...", "kind": "unknown", "status": "failed", "error": "job result expired" }
 ```
 
 Resubmit via `create_context_job` to recompute.
 
 ## Putting it together
 
-A typical agent loop for `intelligence_discover`:
+A typical agent loop for `intelligence_signals`:
 
-1. `create_context_job({ kind: "intelligence_discover", input: { query, platforms, window } })` → `jobId`.
+1. `create_context_job({ kind: "intelligence_signals", query: "..." })` → `jobId`.
 2. If `fromCache: true`, jump to step 4.
 3. `get_context_job_status({ jobId })` every 3 s until `status: "completed"` (or `"failed"`).
-4. `get_context_job_result({ jobId })` → slim envelope. If you need raw vectors, pass `verbose: true`.
+4. `get_context_job_result({ jobId })` → slim envelope. Pass `verbose: true` for the full untouched payload (more tokens).
 
 Most agents handle this entirely autonomously once you cue them with "use kinetk."
