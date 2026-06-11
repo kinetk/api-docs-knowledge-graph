@@ -92,9 +92,11 @@ paths:
 
         Response shapes:
 
-        - `200 + { fromCache: true, result, charged }` — identical recent job
-          within the per-kind freshness window; cached result returned
-          synchronously and charged at full rate (no cache discount).
+        - `200 + { fromCache: true, … }` — identical recent job within the
+          per-kind freshness window; returned synchronously at full rate (no
+          cache discount). For `intelligence_records`, the body carries
+          `resultUrl`/`resultBytes`/`resultExpiresAt` (no inline `result`).
+          For other kinds, `result` is inline.
         - `202 + { dedup: true }` — identical job currently queued/running;
           reuses the in-flight `jobId`.
         - `202 + { estimated_cost }` — new job accepted; the credits were
@@ -160,14 +162,27 @@ paths:
     get:
       operationId: intelligenceJobsStatus
       summary: Poll an async job — status + final result
-      description: |
+      description: >
         Returns the job's current state. All states (`queued`, `running`,
+
         `succeeded`, `failed`) return `200`; `404` for an unknown `jobId`, `410`
+
         once the result has expired (~24h after completion).
 
-        On `succeeded`, `result` carries the per-kind payload. Large results
-        (>300 KB) are rehydrated transparently from object storage. Recommended
-        polling cadence: every 2–5 seconds. Typical end-to-end run: 5–20 s.
+
+        On `succeeded`, the response shape depends on the job kind:
+
+        - **`intelligence_records`** — result is always delivered via a presigned
+          S3 download URL. The body carries `resultUrl`, `resultBytes`, and
+          `resultExpiresAt` in place of an inline `result` field. Fetch
+          `resultUrl` to obtain the `IntelligenceSearchResponse` JSON. URLs
+          expire after 15 minutes; re-poll for a fresh URL if needed.
+        - **`intelligence_signals` / `campaign_brief` / `llm_context`** — `result`
+          is returned inline. Payloads over 300 KB are rehydrated transparently
+          from object storage; the caller always receives the full inline result.
+          A >5 MB payload falls back to the same `resultUrl` download envelope.
+
+        Recommended polling cadence: every 2–5 seconds. Typical end-to-end run: 5–20 s.
       security:
         - ApiKeyAuth: []
       parameters:
