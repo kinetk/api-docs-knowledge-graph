@@ -39,16 +39,21 @@ const optionsSchema = z
 // Explicit `limit` for the per-record-billed kinds (intelligence_records,
 // campaign_brief, llm_context). Required — never defaulted client-side: jobs
 // are billed per record, so the caller must state how many records they are
-// buying. Bounds mirror the backend's external cap (100–10000).
+// buying. The backend accepts up to 10000 for external keys, but the MCP caps
+// at 3000 (MCP_LIMIT_MAX): a reject-not-clamp ceiling that keeps an agent from
+// accidentally buying a huge, slow, expensive pull through a conversational
+// tool call. 3000 is plenty for the context an LLM actually consumes.
+const MCP_LIMIT_MIN = 100;
+export const MCP_LIMIT_MAX = 3000;
 const limitSchema = (kind: string) =>
   z
     .number({
-      required_error: `limit is required for ${kind} — the number of records to retrieve and pay for (between 100 and 10000)`,
-      invalid_type_error: `limit must be a number between 100 and 10000 (records to retrieve for ${kind})`,
+      required_error: `limit is required for ${kind} — the number of records to retrieve and pay for (between ${MCP_LIMIT_MIN} and ${MCP_LIMIT_MAX})`,
+      invalid_type_error: `limit must be a number between ${MCP_LIMIT_MIN} and ${MCP_LIMIT_MAX} (records to retrieve for ${kind})`,
     })
-    .int("limit must be an integer (between 100 and 10000)")
-    .min(100, "limit must be at least 100")
-    .max(10000, "limit must be at most 10000");
+    .int(`limit must be an integer (between ${MCP_LIMIT_MIN} and ${MCP_LIMIT_MAX})`)
+    .min(MCP_LIMIT_MIN, `limit must be at least ${MCP_LIMIT_MIN}`)
+    .max(MCP_LIMIT_MAX, `limit must be at most ${MCP_LIMIT_MAX} via this tool — for larger pulls call the graph-service API directly`);
 
 // Retrieval kinds: query is required. Two parallel single-kind schemas so
 // `z.discriminatedUnion("kind", ...)` can use them — discriminatedUnion
@@ -159,9 +164,9 @@ export const createContextJobJsonSchema = {
     limit: {
       type: "integer",
       minimum: 100,
-      maximum: 10000,
+      maximum: 3000,
       description:
-        "REQUIRED for intelligence_records, campaign_brief and llm_context: how many records to retrieve, between 100 and 10000. Jobs are billed per record, so there is NO default — you are choosing the spend (1000 is a sensible starting point). Not accepted for intelligence_signals (its scan size is server-fixed).",
+        "REQUIRED for intelligence_records, campaign_brief and llm_context: how many records to retrieve, between 100 and 3000. Jobs are billed per record, so there is NO default — you are choosing the spend (1000 is a sensible starting point). Values above 3000 are rejected through this tool (large pulls are slow/expensive and rarely useful as LLM context — use the graph-service API directly if you genuinely need more). Not accepted for intelligence_signals (its scan size is server-fixed at 3000).",
     },
     audience: { type: "string", description: "Target audience description (campaign kinds). Carried into the response context for downstream LLM use; not a retrieval filter." },
     tone: { type: "string", description: "Desired tone (campaign kinds). Carried into the response context; not a retrieval filter." },

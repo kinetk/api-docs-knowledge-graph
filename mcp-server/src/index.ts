@@ -31,14 +31,14 @@ const TOOLS = [
       "- intelligence_signals (needs `query` — and ONLY `query`): SYNTHESIZED INSIGHT signals only — LLM-written arbitrage takeaways (overall, tag-focused, narrative-focused). No raw content. Use when you want the analytical 'so what' about a topic, not the underlying posts. All other parameters (time window, limits, platforms) are server-managed for this kind; any filters/options you pass are dropped before submit. Bounded time windows are coming soon.\n" +
       "- campaign_brief (needs `campaign` + `limit`): a finished, PERSISTED strategy brief WE generate for you (positioning, narratives to ride, recommended creators, platform strategy, content angles) plus its supporting context. Use when you want a ready-made written deliverable.\n" +
       "- llm_context (needs `campaign` + `limit`): the raw assembled campaign CONTEXT bundle (narratives, top tags, creators, representative content) with NO generated brief. Use when YOU will write the strategy yourself and just want the evidence to reason over — faster and cheaper than campaign_brief because it skips the brief-generation step.\n" +
-      "For intelligence_records / campaign_brief / llm_context the API requires an explicit `limit` — how many records to retrieve, 100–10000. Jobs are billed per record, so there is NO default: you choose the spend (1000 is a sensible starting point). It also requires an explicit time window (7d | 30d | all); if you don't set filters.window this server defaults it to 'all'.\n" +
+      "For intelligence_records / campaign_brief / llm_context the API requires an explicit `limit` — how many records to retrieve, 100–3000 through this tool. Jobs are billed per record, so there is NO default: you choose the spend (1000 is a sensible starting point). It also requires an explicit time window (7d | 30d | all); if you don't set filters.window this server defaults it to 'all'.\n" +
       "Rule of thumb: a `query` → records (content) or signals (insights); a `campaign` → llm_context (you synthesize) or campaign_brief (we synthesize).",
     inputSchema: createContextJobJsonSchema,
   },
   {
     name: "get_context_job_status",
     description:
-      "Poll the status of a previously-submitted context job. Returns 'queued' | 'running' | 'completed' | 'failed' (no result payload). Cheap to call repeatedly.",
+      "Poll the status of a previously-submitted context job. Returns 'queued' | 'running' | 'completed' | 'failed' (no result payload — cheap to call repeatedly). Jobs typically finish in ~5-20s; poll every few seconds. Once status is 'completed', call get_context_job_result to fetch the data. On 'failed', read the `error` field. If create_context_job already returned status 'succeeded' (a cache hit), skip polling and call get_context_job_result directly.",
     inputSchema: getContextJobStatusJsonSchema,
   },
   {
@@ -113,10 +113,37 @@ function formatError(err: unknown): string {
     return `invalid input:\n${issues.join("\n")}`;
   }
   if (err instanceof GraphServiceError) {
-    return `graph-service ${err.statusCode}: ${err.message}`;
+    return `graph-service ${err.statusCode}: ${err.message}${graphServiceErrorDetail(err)}`;
   }
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+// Surface the machine-readable, actionable detail the backend attaches to common
+// 4xx bodies so the agent can self-correct instead of just seeing a status line.
+// Today that's the 402 insufficient_credits body (how many credits are needed vs
+// available, and the max affordable `limit` for the requested window). Returns ""
+// when there's nothing extra to add.
+function graphServiceErrorDetail(err: GraphServiceError): string {
+  const body = err.body;
+  if (!body || typeof body !== "object") return "";
+  const b = body as Record<string, unknown>;
+  if (b.error !== "insufficient_credits") return "";
+  const parts: string[] = [];
+  if (typeof b.credits_required === "number" && typeof b.credits_available === "number") {
+    parts.push(`needs ${b.credits_required} credits, have ${b.credits_available}`);
+  }
+  const rec = b.recommendations;
+  if (rec && typeof rec === "object") {
+    const r = rec as Record<string, unknown>;
+    if (typeof r.maxLimitForWindow === "number") {
+      parts.push(`retry with limit <= ${r.maxLimitForWindow} for this window`);
+    }
+    if (typeof r.topUpUrl === "string") {
+      parts.push(`top up at ${r.topUpUrl}`);
+    }
+  }
+  return parts.length > 0 ? ` (${parts.join("; ")})` : "";
 }
 
 function parseTimeoutMs(raw: string | undefined): number | undefined {
@@ -125,12 +152,7 @@ function parseTimeoutMs(raw: string | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-// Only boot the server when run directly (e.g. `node dist/index.js`), not when
-// the module is imported — so a `require('./dist/index.js')` smoke test can
-// verify the build loads without GRAPH_SERVICE_URL being set.
-if (require.main === module) {
-  main().catch((err) => {
-    process.stderr.write(`kinetk-mcp-server fatal: ${formatError(err)}\n`);
-    process.exit(1);
-  });
-}
+main().catch((err) => {
+  process.stderr.write(`kinetk-mcp-server fatal: ${formatError(err)}\n`);
+  process.exit(1);
+});

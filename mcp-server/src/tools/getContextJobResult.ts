@@ -92,15 +92,38 @@ export async function getContextJobResult(
           error: job.error ?? "job failed without an error message",
         },
       };
-    case "succeeded":
+    case "succeeded": {
+      // Large-result path: graph-service omitted the inline `result` and gave us
+      // a presigned S3 URL instead. Download it and use its JSON body as the
+      // result. Surface a clear, non-crashing message if the download fails
+      // (e.g. an expired URL → re-poll for a fresh one).
+      let result = job.result;
+      if (result === undefined && job.resultUrl) {
+        try {
+          result = await client.fetchResultUrl(job.resultUrl);
+        } catch (err) {
+          return {
+            mode: "failed",
+            data: {
+              jobId,
+              kind: job.kind,
+              status: "failed",
+              error:
+                `job succeeded but the large-result download failed: ${errorMessage(err)}. ` +
+                `The result is stored in S3 behind a short-lived link — call get_context_job_result again to retry with a fresh link.`,
+            },
+          };
+        }
+      }
       return shapeOutput({
         jobId,
         kind: job.kind,
-        result: job.result,
+        result,
         verbose: Boolean(verbose),
         submittedAt: job.submittedAt,
         completedAt: job.completedAt,
       });
+    }
   }
 }
 
@@ -109,7 +132,7 @@ type FetchedJob =
   | { status: "queued"; kind: JobKind; submittedAt: number }
   | { status: "running"; kind: JobKind; submittedAt: number }
   | { status: "failed"; kind: JobKind; submittedAt: number; error?: string }
-  | { status: "succeeded"; kind: JobKind; submittedAt: number; completedAt?: number; result: unknown }
+  | { status: "succeeded"; kind: JobKind; submittedAt: number; completedAt?: number; result: unknown; resultUrl?: string }
   | { status: "expired"; kind: JobKind | "unknown" };
 
 async function fetchJob(client: GraphServiceClient, jobId: string): Promise<FetchedJob> {
@@ -123,6 +146,9 @@ async function fetchJob(client: GraphServiceClient, jobId: string): Promise<Fetc
           submittedAt: job.submittedAt,
           completedAt: job.completedAt,
           result: job.result,
+          // Present iff the result was too big to inline (resultStorage "s3");
+          // getContextJobResult downloads it before mapping.
+          resultUrl: job.resultStorage === "s3" ? job.resultUrl : undefined,
         };
       case "failed":
         return { status: "failed", kind: job.kind, submittedAt: job.submittedAt, error: job.error };
@@ -145,6 +171,11 @@ async function fetchJob(client: GraphServiceClient, jobId: string): Promise<Fetc
 
 function isGraphServiceError(err: unknown): err is GraphServiceError {
   return Boolean(err) && typeof err === "object" && (err as { name?: string }).name === "GraphServiceError";
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
 }
 
 function shapeOutput(args: {

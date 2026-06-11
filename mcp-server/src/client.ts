@@ -52,6 +52,44 @@ export class GraphServiceClient {
     return json as GetJobResponse;
   }
 
+  // Fetch a large result from the presigned S3 URL graph-service hands back when
+  // the payload is too big to inline (>3.5 MB). This is a direct GET to S3 — NOT
+  // a graph-service path — so it carries no API key and uses an absolute URL.
+  // Returns the parsed JSON body (the full result payload). Throws a typed
+  // GraphServiceError on a non-2xx (e.g. an expired presigned URL → 403) so the
+  // caller can surface a clear, actionable message instead of crashing.
+  async fetchResultUrl(resultUrl: string): Promise<unknown> {
+    let statusCode: number;
+    let text: string;
+    try {
+      const res = await request(resultUrl, {
+        method: "GET",
+        bodyTimeout: this.timeoutMs,
+        headersTimeout: this.timeoutMs,
+      });
+      statusCode = res.statusCode;
+      text = await res.body.text();
+    } catch (err) {
+      throw new GraphServiceError(
+        0,
+        `failed to download large result from presigned URL: ${err instanceof Error ? err.message : String(err)}`,
+        undefined,
+      );
+    }
+    if (statusCode >= 400) {
+      throw new GraphServiceError(
+        statusCode,
+        `presigned result URL returned ${statusCode}${statusCode === 403 ? " (URL likely expired — re-poll the job for a fresh one)" : ""}`,
+        text.slice(0, 200),
+      );
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new GraphServiceError(0, "presigned result URL returned a non-JSON body", text.slice(0, 200));
+    }
+  }
+
   private async requestWithRetry(
     method: "GET" | "POST",
     path: string,

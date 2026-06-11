@@ -54,6 +54,24 @@ HTTP 200
 
 Always check the HTTP status (`200` vs `202`) and the optional `fromCache` / `dedup` flags before deciding whether to start polling.
 
+## Large results — presigned download URL
+
+Responses from the job API have a size limit, so large results are not returned inline. When a job succeeds but its result is too large to return directly, the response omits the `result` field and instead includes a short-lived, presigned S3 URL. The client downloads the result directly from that URL.
+
+```json
+{
+  "jobId": "01931f7e-...",
+  "kind": "intelligence_records",
+  "status": "succeeded",
+  "resultStorage": "s3",
+  "resultUrl": "https://...s3.amazonaws.com/jobs/<id>.json?X-Amz-Signature=...",
+  "resultBytes": 8200431,
+  "resultExpiresAt": "2026-06-11T05:37:09.000Z"
+}
+```
+
+**Client contract:** if `result` is absent and `resultStorage === "s3"`, `GET` the `resultUrl` to download the full JSON payload. The URL is valid for ~1 h (and never past the job's own TTL — see `resultExpiresAt`); if it has expired, just poll this endpoint again for a fresh one.
+
 ## Billing & costs
 
 Jobs are paid in credits:
@@ -105,12 +123,6 @@ Submit computes `inputHash = sha256(canonicalJson({ kind, input }))` and checks 
 Two **concurrent** identical submits will both hit the dedup check. The first creates a row and enqueues; the second observes the `queued`/`running` row and returns the same `jobId` with `dedup: true`. No second SQS message is sent — both pollers converge on the same result.
 
 There's a small race window where two submits arriving in the same millisecond can both miss the dedup check and both queue. In that case both jobs run independently and produce identical results — the cost is duplicate work, not data corruption. This is documented as a v1 accepted trade-off.
-
-## Large results
-
-When a job's result exceeds 300 KB, the worker writes it to S3 and stores a pointer in DynamoDB. The status endpoint rehydrates transparently — your client sees the full result inline either way.
-
-If the S3 write fails, the worker writes a truncated preview envelope to DynamoDB and logs the spill failure server-side. This is rare; surface as `result.__truncated: true` in your client if you want defensive handling.
 
 ## TTL
 

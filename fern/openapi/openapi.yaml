@@ -160,14 +160,27 @@ paths:
     get:
       operationId: intelligenceJobsStatus
       summary: Poll an async job — status + final result
-      description: |
+      description: >
         Returns the job's current state. All states (`queued`, `running`,
+
         `succeeded`, `failed`) return `200`; `404` for an unknown `jobId`, `410`
+
         once the result has expired (~24h after completion).
 
-        On `succeeded`, `result` carries the per-kind payload. Large results
-        (>300 KB) are rehydrated transparently from object storage. Recommended
-        polling cadence: every 2–5 seconds. Typical end-to-end run: 5–20 s.
+
+        On `succeeded`, `result` usually carries the per-kind payload inline.
+
+        When a result is too large to return inline, `result` is omitted and the
+
+        response instead carries `resultStorage: "s3"` plus a short-lived presigned
+
+        `resultUrl` (with `resultBytes` and `resultExpiresAt`) — fetch that URL
+
+        directly to download the full payload, and re-poll for a fresh URL if it
+
+        expires. Recommended polling cadence: every 2–5 seconds. Typical
+
+        end-to-end run: 5–20 s.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -1379,6 +1392,29 @@ components:
             - $ref: "#/components/schemas/IIntelligenceSignalsJobResult"
             - $ref: "#/components/schemas/ICampaignBriefJobResult"
             - $ref: "#/components/schemas/ILlmContextJobResult"
+        resultBytes:
+          description: Size of the stored result in bytes (present alongside resultUrl).
+          type: number
+        resultExpiresAt:
+          description: ISO-8601 expiry of resultUrl (clamped to the job's own retention).
+          type: string
+        resultStorage:
+          enum:
+            - s3
+          description: >-
+            Set to "s3" when the result was too large to return inline; in that
+            case
+
+            `result` is omitted and `resultUrl` holds a short-lived presigned download
+
+            URL instead. Fetch the URL directly; re-poll for a fresh one after it
+
+            expires (see resultExpiresAt).
+          type: string
+        resultUrl:
+          description: Short-lived presigned GET URL for a large result (present iff
+            resultStorage === "s3").
+          type: string
         startedAt:
           type: number
         status:
@@ -1406,6 +1442,29 @@ components:
             - $ref: "#/components/schemas/IIntelligenceSignalsJobResult"
             - $ref: "#/components/schemas/ICampaignBriefJobResult"
             - $ref: "#/components/schemas/ILlmContextJobResult"
+        resultBytes:
+          description: Size of the stored result in bytes (present alongside resultUrl).
+          type: number
+        resultExpiresAt:
+          description: ISO-8601 expiry of resultUrl (clamped to the job's own retention).
+          type: string
+        resultStorage:
+          enum:
+            - s3
+          description: >-
+            Set to "s3" when the result was too large to return inline; in that
+            case
+
+            `result` is omitted and `resultUrl` holds a short-lived presigned download
+
+            URL instead. Fetch the URL directly; re-poll for a fresh one after it
+
+            expires (see resultExpiresAt).
+          type: string
+        resultUrl:
+          description: Short-lived presigned GET URL for a large result (present iff
+            resultStorage === "s3").
+          type: string
         status:
           $ref: "#/components/schemas/JobStatus"
         statusUrl:

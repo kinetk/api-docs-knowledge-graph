@@ -53,8 +53,24 @@ export async function createContextJob(
   // Cache hit: graph-service returned the result inline (200 path in
   // api/jobs.ts). Stash it so the agent's next get_context_job_result lands
   // in O(1).
-  if (response.status === "succeeded" && response.result !== undefined) {
-    rememberCachedResult(response.jobId, kind, response.result);
+  if (response.status === "succeeded") {
+    if (response.result !== undefined) {
+      rememberCachedResult(response.jobId, kind, response.result);
+    } else if (response.resultStorage === "s3" && response.resultUrl) {
+      // Large cache hit: the result was too big to inline, so graph-service
+      // returned a presigned S3 URL instead. Download it and cache the full
+      // payload — otherwise the follow-up get_context_job_result would refetch
+      // the job and (because the presigned URL is single-use/short-lived) might
+      // find a stale or expired pointer. Best-effort: a download failure here
+      // just means we don't pre-cache — the result tool can still re-fetch.
+      try {
+        const full = await client.fetchResultUrl(response.resultUrl);
+        rememberCachedResult(response.jobId, kind, full);
+      } catch {
+        // Swallow — leave it uncached; get_context_job_result will retry the
+        // download (and surface a clear error there if it still fails).
+      }
+    }
   }
 
   return {
