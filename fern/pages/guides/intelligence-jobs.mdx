@@ -6,7 +6,7 @@ description: The async job lifecycle — submit, poll, cache, dedup.
 All heavy intelligence work runs through one async endpoint pair:
 
 - `POST /intelligence/jobs` — submit a job, get a `jobId` immediately.
-- `GET /intelligence/jobs/{id}` — poll status; once `succeeded`, the response carries the result or a download URL.
+- `GET /intelligence/jobs/{id}` — poll status; once `succeeded`, `intelligence_records` responses carry a presigned download URL, and all other kinds carry the result inline.
 
 This page covers the lifecycle, the four supported `kind` values, the cache + dedup semantics, and the failure modes.
 

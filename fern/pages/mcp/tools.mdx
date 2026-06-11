@@ -45,7 +45,7 @@ Filters and options apply to `intelligence_records`, `campaign_brief` and `llm_c
 }
 ```
 
-If the backend has a fresh cached run for this input, `status` is `succeeded` and `fromCache: true` — `get_context_job_result` returns in O(1) on the next call. For `intelligence_records` cache-hits, the submit response carries the download envelope (`resultUrl` etc.) rather than an inline result; `get_context_job_result` fetches it transparently.
+If the backend has a fresh cached run for this input, `status` is `succeeded` and `fromCache: true`. For `intelligence_signals`, `campaign_brief`, and `llm_context` cache-hits, the MCP stashes the inline result in-process so `get_context_job_result` returns immediately without an extra round-trip. For `intelligence_records` cache-hits, the submit response carries the download envelope (`resultUrl` etc.) rather than an inline result; `get_context_job_result` re-polls the backend for a fresh URL and fetches the S3 object on your behalf.
 
 ### Example agent prompt
 
@@ -91,7 +91,7 @@ For `intelligence_records`, the API returns a presigned `resultUrl` rather than 
 
 - **Transparent fetch:** `get_context_job_result` downloads the S3 object behind `resultUrl` and passes the parsed JSON to the slim mapper, exactly as if the result had been inline.
 - **Re-poll on 403:** if the presigned URL has expired (S3 returns `403`), the MCP re-polls the status endpoint once to obtain a fresh URL, then retries the download. If the second attempt also fails, a failed envelope is returned.
-- **Verbose mode:** set `verbose: true` to receive the full status envelope (including `resultUrl`, `resultBytes`, `resultExpiresAt`, `actualRecordsReturned`) plus the downloaded result body. Useful for inspecting metadata or fetching the URL yourself.
+- **Verbose mode:** set `verbose: true` to receive the full status envelope (including `resultUrl`, `resultBytes`, `resultExpiresAt`, `actualRecordsReturned`, `charged`) with the downloaded result body nested under `downloadedResult`. Useful for inspecting metadata or fetching the URL yourself.
 - **Unexpected shape:** if a succeeded `intelligence_records` response carries neither `result` nor `resultUrl`, the MCP surfaces a failed envelope with `error: "unexpected job result shape"` rather than silently returning empty content.
 
 ### Returns (slim envelope)
@@ -114,7 +114,10 @@ The envelope shape depends on `kind`:
       "publishedAt": "2026-05-01T12:00:00.000Z",
       "creator": { "followerCount": 120000 }
     }
-  ]
+    // ... more items
+  ],
+  "graph": { /* content/tag/creator relationship graph */ },
+  "retrieval": { "totalCandidates": 50000, "returned": 4812, "window": "30d" }
 }
 
 // intelligence_signals → insight signals only (no raw content)
@@ -133,9 +136,10 @@ creator carries only a non-identifying `followerCount`.
 ### Returns (verbose)
 
 Set `verbose: true` for the full untouched graph-service payload for the kind.
-For `intelligence_records` this includes the status envelope fields (`resultUrl`,
-`resultBytes`, `resultExpiresAt`, `actualRecordsReturned`) alongside the
-downloaded result body — see the [API Reference](/api-reference) for complete shapes.
+For `intelligence_records` the `result` field in the response is the status
+envelope — `{ resultUrl, resultBytes, resultExpiresAt, actualRecordsReturned, charged, downloadedResult }` — where `downloadedResult` is the parsed S3 object (`IIntelligenceRecordsJobResult` JSON).
+For other kinds, `result` is the inline job result as returned by the API.
+See the [API Reference](/api-reference) for complete shapes.
 
 ### Pending behavior
 
