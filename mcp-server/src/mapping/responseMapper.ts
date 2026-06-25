@@ -25,13 +25,37 @@ export type SlimItem = {
   creator: { followerCount: number | null } | null;
 };
 
+// A-3 — discovery is STRUCTURED by default (A-1), so a discovery narrative now
+// carries its real lifecycle/link + themes, not just tags.
 export type SlimNarrative = {
   id: string;
   label: string;
   summary: string;
   contentCount: number;
   topTags: string[];
+  topThemes: string[];
+  // From the B-2 persistent link: real lifecycle + whether it is linked/net-new.
+  lifecycle: string | null;
+  linkStatus: string | null;
+  diffusion: number | null;
   representativeIds: string[];
+};
+
+// Capped per-tag / per-theme arbitrage signal (B-3/B-6 de-collineated).
+export type SlimSignal = {
+  key: string;
+  engagementPremiumPct: number | null;
+  whitespaceScore: number | null;
+  dominantPlatform: string | null;
+};
+
+// Per-narrative sentiment headline (B-4), coverage-gated.
+export type SlimSentiment = {
+  narrativeLabel: string;
+  dominantTone: string | null;
+  toneAvailable: boolean;
+  netStance: number | null;
+  stanceAvailable: boolean;
 };
 
 export type SlimGraph = {
@@ -45,15 +69,17 @@ export type SlimResult = {
   status: "completed" | "failed" | "pending";
   generatedAt: string | null;
   query?: string;
-  campaign?: string;
   items?: SlimItem[];
   graph?: SlimGraph;
   narratives?: SlimNarrative[];
+  // Structured discovery facets (insights), capped for token economy.
+  tagSignals?: SlimSignal[];
+  themeSignals?: { available: boolean; coverage: number; signals: SlimSignal[] };
+  narrativeSentiment?: SlimSentiment[];
+  // Prose arrays present only when the job opted into includeSignals.
   insights?: string[];
   tagInsights?: string[];
   narrativeInsights?: string[];
-  context?: unknown;
-  brief?: unknown;
   retrieval?: { totalCandidates: number; returned: number; window: string | null };
   error?: string;
 };
@@ -71,14 +97,10 @@ export function mapJobResultToSlim(result: unknown, ctx: ResponseMapperContext):
     generatedAt: pickString(result, "generatedAt"),
   };
   switch (ctx.kind) {
-    case "intelligence_records":
+    case "records":
       return { ...base, ...mapSearchResult(result) };
-    case "intelligence_signals":
+    case "insights":
       return { ...base, ...mapDiscoverResult(result) };
-    case "campaign_brief":
-      return { ...base, ...mapCampaignBriefResult(result) };
-    case "llm_context":
-      return { ...base, ...mapLlmContextResult(result) };
   }
 }
 
@@ -94,40 +116,81 @@ function mapSearchResult(result: unknown): Partial<SlimResult> {
 
 function mapDiscoverResult(result: unknown): Partial<SlimResult> {
   const obj = asObject(result);
-  // intelligence_signals is signals-only: the response carries the three insight
-  // prose arrays (+ envelope), not the underlying content/narratives/graphs.
+  // A-1 — insights is STRUCTURED by default: narratives (with B-2 link),
+  // tag/theme signals (with B-3 whitespace), per-narrative sentiment (B-4). Cap
+  // each facet so the agent gets the intelligence without paying for the full
+  // analytics. Prose arrays appear only when the job opted into includeSignals.
   const slimStrings = (key: string): string[] | undefined => {
     const arr = asArray(obj?.[key]).filter((v): v is string => typeof v === "string").slice(0, 12);
     return arr.length > 0 ? arr : undefined;
   };
+  const themeSignalsObj = asObject(obj?.["themeSignals"]);
   return {
     query: pickString(obj, "query") ?? undefined,
+    narratives: mapDiscoveryNarratives(asArray(obj?.["narratives"]).slice(0, 5)),
+    tagSignals: mapSignals(asArray(obj?.["tagSignals"]).slice(0, 10), "tag"),
+    themeSignals: themeSignalsObj
+      ? {
+          available: themeSignalsObj["available"] === true,
+          coverage: pickNumber(themeSignalsObj, "coverage") ?? 0,
+          signals: mapSignals(asArray(themeSignalsObj["signals"]).slice(0, 8), "theme") ?? [],
+        }
+      : undefined,
+    narrativeSentiment: mapNarrativeSentiment(asArray(obj?.["narrativeSentiment"]).slice(0, 8)),
     insights: slimStrings("insights"),
     tagInsights: slimStrings("tagInsights"),
     narrativeInsights: slimStrings("narrativeInsights"),
   };
 }
 
-function mapCampaignBriefResult(result: unknown): Partial<SlimResult> {
-  // campaign_brief handler returns { id, createdAt, brief, context }.
-  const obj = asObject(result);
-  const context = asObject(obj?.["context"]);
-  return {
-    campaign: pickString(context, "campaign") ?? pickString(context, "query") ?? undefined,
-    brief: obj?.["brief"],
-    context: context ?? undefined,
-    generatedAt: pickString(obj, "createdAt") ?? null,
-  };
+function mapDiscoveryNarratives(rows: unknown[]): SlimNarrative[] | undefined {
+  if (rows.length === 0) return undefined;
+  return rows.map((row) => {
+    const r = asObject(row) ?? {};
+    const link = asObject(r["persistentLink"]);
+    const linkStatus = link ? pickString(link, "status") : null;
+    return {
+      id: pickString(r, "id") ?? "",
+      label: pickString(r, "label") ?? "",
+      summary: pickString(r, "summary") ?? "",
+      contentCount: pickNumber(r, "contentCount") ?? 0,
+      topTags: asArray(r["topTags"]).filter((t): t is string => typeof t === "string").slice(0, 6),
+      topThemes: asArray(r["topThemes"]).filter((t): t is string => typeof t === "string").slice(0, 6),
+      // Real lifecycle only when the cluster actually linked to a persistent narrative.
+      lifecycle: linkStatus === "linked" && link ? pickString(link, "lifecycle") : null,
+      linkStatus,
+      diffusion: linkStatus === "linked" && link ? pickNumber(link, "diffusion") : null,
+      representativeIds: asArray(r["contentUuids"]).filter((t): t is string => typeof t === "string").slice(0, 25),
+    };
+  });
 }
 
-function mapLlmContextResult(result: unknown): Partial<SlimResult> {
-  // llm_context handler returns { type, generatedAt, context }.
-  const obj = asObject(result);
-  const context = asObject(obj?.["context"]);
-  return {
-    campaign: pickString(context, "campaign") ?? pickString(context, "query") ?? undefined,
-    context: context ?? undefined,
-  };
+function mapSignals(rows: unknown[], keyField: "tag" | "theme"): SlimSignal[] | undefined {
+  if (rows.length === 0) return undefined;
+  const mapped = rows.map((row) => {
+    const r = asObject(row) ?? {};
+    return {
+      key: pickString(r, keyField) ?? "",
+      engagementPremiumPct: pickNumber(r, "engagementPremiumPct"),
+      whitespaceScore: pickNumber(r, "whitespaceScore"),
+      dominantPlatform: pickString(r, "dominantPlatform"),
+    };
+  });
+  return mapped.length > 0 ? mapped : undefined;
+}
+
+function mapNarrativeSentiment(rows: unknown[]): SlimSentiment[] | undefined {
+  if (rows.length === 0) return undefined;
+  return rows.map((row) => {
+    const r = asObject(row) ?? {};
+    return {
+      narrativeLabel: pickString(r, "narrativeLabel") ?? "",
+      dominantTone: pickString(r, "dominantTone"),
+      toneAvailable: r["toneAvailable"] === true,
+      netStance: pickNumber(r, "netStance"),
+      stanceAvailable: r["stanceAvailable"] === true,
+    };
+  });
 }
 
 function mapItems(rows: unknown[]): SlimItem[] {
@@ -181,23 +244,6 @@ function mapGraph(graph: Record<string, unknown> | null): SlimGraph | undefined 
   });
   if (nodes.length === 0 && edges.length === 0) return undefined;
   return { nodes, edges };
-}
-
-function mapNarratives(rows: unknown[]): SlimNarrative[] | undefined {
-  if (rows.length === 0) return undefined;
-  return rows.map((row) => {
-    const r = asObject(row) ?? {};
-    return {
-      id: pickString(r, "id") ?? "",
-      label: pickString(r, "label") ?? "",
-      summary: pickString(r, "summary") ?? "",
-      contentCount: pickNumber(r, "contentCount") ?? 0,
-      topTags: asArray(r["topTags"]).filter((t): t is string => typeof t === "string"),
-      representativeIds: asArray(r["contentUuids"])
-        .filter((t): t is string => typeof t === "string")
-        .slice(0, 25),
-    };
-  });
 }
 
 function mapRetrieval(retrieval: Record<string, unknown> | null, window: string | null): SlimResult["retrieval"] {

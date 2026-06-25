@@ -17,7 +17,7 @@ COMMENTED OUT — restore when Narrative Intelligence docs are ready.
 There are two ways to access narratives:
 
 - **Precomputed reads** — `/narratives/trending`, `/narratives/search`, `/narratives/{id}`. Sub-second. Refreshed on a 6-hour schedule. Best for dashboards.
-- **Ad-hoc discovery** — `POST /intelligence/jobs` with `kind: "intelligence_signals"`. 5–20 seconds. Runs the full retrieval + clustering + analytics pipeline against a free-text query.
+- **Ad-hoc discovery** — `POST /intelligence/jobs` with `kind: "insights"`. 5–20 seconds. Runs the full retrieval + clustering + analytics pipeline against a free-text query.
 
 ## Precomputed narratives
 
@@ -50,21 +50,21 @@ Returns one narrative plus its content list, top creators, per-platform breakdow
 
 ## Ad-hoc discovery (async)
 
-When the precomputed set doesn't have what you need — e.g. you want signals on a custom topic — submit an async `intelligence_signals` job:
+When the precomputed set doesn't have what you need — e.g. you want signals on a custom topic — submit an async `insights` job:
 
 ```bash
 curl -X POST "$API_BASE/intelligence/jobs" \
   -H "x-api-key: $API_KEY" \
   -H "content-type: application/json" \
   -d '{
-    "kind": "intelligence_signals",
+    "kind": "insights",
     "input": {
       "query": "luxury watch culture 2026"
     }
   }'
 ```
 
-`intelligence_signals` takes exactly one input field — `query`. The time window (`all`), scan size, platform scope and query expansion are all fixed by the service for this kind; any other input field returns `400`. Bounded time windows for this kind are coming soon.
+`insights` takes `query` (required) plus an optional `includeIntelligenceSignals` boolean. The time window (`all`), scan size and platform scope are fixed by the service for this kind; any other input field returns `400`. Bounded time windows for this kind are coming soon.
 
 The discover pipeline runs all of the following before returning:
 
@@ -76,39 +76,19 @@ The discover pipeline runs all of the following before returning:
 6. **Analytics** — top tags, tag co-occurrence, narrative roles, creator amplifier scores, per-platform opportunities, tag arbitrage signals, attribute lifts.
 7. **LLM augmentation** — an LLM labels each cluster and writes 4–6 quantified arbitrage insight lines.
 
-The response returns the **insight signals only** — the three LLM arbitrage arrays (`insights`, `tagInsights`, `narrativeInsights`). Steps 1–6 are computed to produce those insights but are not part of the response; for the raw matching content use `intelligence_records`. See the [API Reference](/api-reference) for the full schema.
+The response returns **structured signals** — narrative projections, per-tag and per-theme signals, narrative sentiment/saturation, platform opportunities, and attribute lifts. Set `includeIntelligenceSignals: true` to additionally get the LLM-written prose arrays (`insights`, `tagInsights`, `narrativeInsights`). For the raw matching content use `records` instead. See the [API Reference](/api-reference) for the full schema.
 
 ## Records vs. signals
 
-Both `intelligence_records` and `intelligence_signals` start with the same retrieval pipeline. The difference is what they return on top:
+Both `records` and `insights` start with the same retrieval pipeline. The difference is what they return on top:
 
 | Kind | Returns | Latency | When to use |
 |---|---|---|---|
-| `intelligence_records` | Ranked content items **+ a relationship `graph`** | 5–10 s | You want the matching content itself. |
-| `intelligence_signals` | Insight signals only — LLM arbitrage lines (overall, tag-focused, narrative-focused) | 10–20 s | You want the synthesized "so what", not the items. |
+| `records` | Ranked content items **+ a relationship `graph`** | 5–10 s | You want the matching content itself. |
+| `insights` | Structured narrative/tag/theme signals (and, with `includeIntelligenceSignals`, LLM prose arrays) | 10–20 s | You want the synthesized "so what", not the items. |
 
-Pick `intelligence_records` if you're feeding a search UI; pick `intelligence_signals` if you're feeding an analyst or agent that wants the "shape" of the conversation.
+Pick `records` if you're feeding a search UI; pick `insights` if you're feeding an analyst or agent that wants the "shape" of the conversation.
 
-`intelligence_records` also returns a `graph` — content, tag, creator and narrative nodes linked by similarity, tag co-occurrence and authorship edges. Render it as a network diagram to show how the matching content relates, or run graph analysis (hubs, bridges, communities) over it. Ignore the field if you only need the ranked list.
-
-## Free-text vs. campaign context
-
-The retrieval kinds (`intelligence_records`, `intelligence_signals`) accept a free-text `query`. The campaign-shaped kinds (`campaign_brief`, `llm_context`) accept a structured `campaign` object instead:
-
-```json
-{
-  "kind": "campaign_brief",
-  "input": {
-    "campaign": "smart watch launch",
-    "audience": "health-conscious millennials",
-    "platforms": ["TIKTOK", "INSTAGRAM"],
-    "tone": "premium but approachable",
-    "window": "30d",
-    "limit": 1000
-  }
-}
-```
-
-Both run the same discovery pipeline under the hood; the campaign kinds layer a campaign-context adapter on top and (for `campaign_brief`) persist the result. See the [API Reference](/api-reference) for full input shapes.
+`records` also returns a `graph` — content, tag, creator and narrative nodes linked by similarity, tag co-occurrence and authorship edges. Render it as a network diagram to show how the matching content relates, or run graph analysis (hubs, bridges, communities) over it. Ignore the field if you only need the ranked list.
 
 --------------------------------------------------------------------------- */}

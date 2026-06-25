@@ -5,21 +5,15 @@
 // with capped exponential backoff; 4xx surfaces immediately as a typed error.
 
 import { request } from "undici";
-import type { GetJobResponse, JobKind, SubmitJobResponse } from "./types";
+import type { GetJobResponse, GraphJobsPort, JobKind, SubmitJobResponse } from "./types";
+import { GraphServiceError } from "./types";
+
+// Re-exported for backwards compatibility — the class now lives in types.ts so
+// the transport-agnostic core can use it without importing undici.
+export { GraphServiceError };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 3;
-
-export class GraphServiceError extends Error {
-  readonly statusCode: number;
-  readonly body: unknown;
-  constructor(statusCode: number, message: string, body: unknown) {
-    super(message);
-    this.name = "GraphServiceError";
-    this.statusCode = statusCode;
-    this.body = body;
-  }
-}
 
 export type GraphServiceClientOptions = {
   baseUrl: string;
@@ -27,7 +21,7 @@ export type GraphServiceClientOptions = {
   timeoutMs?: number;
 };
 
-export class GraphServiceClient {
+export class GraphServiceClient implements GraphJobsPort {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly timeoutMs: number;

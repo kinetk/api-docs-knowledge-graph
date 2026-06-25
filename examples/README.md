@@ -1,10 +1,25 @@
 # Examples
 
-Coming soon — mini projects that demonstrate end-to-end use of the KINETK Graph Service API:
+A standalone showcase app that demonstrates end-to-end use of the KINETK Graph
+Service API + MCP. It's a self-contained Next.js app — it borrows the KINETK
+brand palette and fonts but is **not** part of the marketing website. It runs on
+**live data**, so it needs a `KINETK_API_KEY` (and a `GEMINI_API_KEY` for the
+synthesis step).
 
-- **intelligence-records** — minimal Node/Python client that submits an async retrieval job and polls for results.
-- **campaign-brief** — wraps `campaign_brief` into a one-shot CLI that prints the generated brief.
-- **narrative-trending-feed** — dashboard-style consumer of `/narratives/trending` with auto-refresh.
-- **mcp-agent-loop** — Claude/Cursor agent recipe that uses the `kinetk` MCP server tools.
+| App | What it shows | Hero capability |
+| --- | --- | --- |
+| [`growth-demo`](./growth-demo) | Pass a product → an AI agent pulls the live `insights` signal over MCP and Gemini synthesizes a grounded launch & growth plan (positioning, selling hooks, audience, telemetry, hashtags, visual theme). | MCP `insights` + Gemini synthesis |
 
-In the meantime, see [`fern/pages/getting-started/quickstart.mdx`](../fern/pages/getting-started/quickstart.mdx) for `curl` walk-throughs and [`fern/pages/mcp/installation.mdx`](../fern/pages/mcp/installation.mdx) for the MCP install guide.
+
+## Quick start
+
+```bash
+cd examples/growth-demo
+npm install
+cp .env.example .env               # add KINETK_API_KEY + GEMINI_API_KEY
+npm run dev                        # http://localhost:3000
+```
+
+`growth-demo` uses real data only — see [`growth-demo/.env.example`](./growth-demo/.env.example)
+for the two required keys. Get a KINETK key at <https://platform.kinetk.ai/login>
+and a Gemini key at <https://aistudio.google.com/apikey>.

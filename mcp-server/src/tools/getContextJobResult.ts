@@ -1,19 +1,15 @@
 // Phase 3: get_context_job_result MCP tool. Returns either the slim envelope
 // (default — token-efficient) or the raw graph-service payload (verbose).
-// Three "happy" outcomes:
-//   - cache hit on the MCP-local map (job was a backend cache hit at submit
-//     time): return immediately, no HTTP roundtrip.
+// Three outcomes:
 //   - succeeded job: fetch full row, run response mapper.
 //   - still-running job: return { status: "pending" } so the agent knows to
 //     poll get_context_job_status. We don't error — pending is a normal
 //     state, not a failure.
 // Failures and 410-expired rows surface as { status: "failed", error }.
 
-import type { GraphServiceClient, GraphServiceError } from "../client";
 import { mapJobResultToSlim, type SlimResult } from "../mapping/responseMapper";
 import { getContextJobResultInputSchema } from "../schemas";
-import type { JobKind } from "../types";
-import { getCachedJobResult } from "./createContextJob";
+import type { GraphJobsPort, GraphServiceError, JobKind } from "../types";
 
 export type GetContextJobResultOutput =
   | { mode: "slim"; data: SlimResult }
@@ -48,21 +44,9 @@ export type FailedEnvelope = {
 
 export async function getContextJobResult(
   rawInput: unknown,
-  client: GraphServiceClient
+  client: GraphJobsPort
 ): Promise<GetContextJobResultOutput> {
   const { jobId, verbose } = getContextJobResultInputSchema.parse(rawInput);
-
-  const cached = getCachedJobResult(jobId);
-  if (cached) {
-    return shapeOutput({
-      jobId,
-      kind: cached.kind,
-      result: cached.result,
-      verbose: Boolean(verbose),
-      submittedAt: cached.storedAt,
-      completedAt: cached.storedAt,
-    });
-  }
 
   const job = await fetchJob(client, jobId);
   switch (job.status) {
@@ -135,7 +119,7 @@ type FetchedJob =
   | { status: "succeeded"; kind: JobKind; submittedAt: number; completedAt?: number; result: unknown; resultUrl?: string }
   | { status: "expired"; kind: JobKind | "unknown" };
 
-async function fetchJob(client: GraphServiceClient, jobId: string): Promise<FetchedJob> {
+async function fetchJob(client: GraphJobsPort, jobId: string): Promise<FetchedJob> {
   try {
     const job = await client.getJob(jobId);
     switch (job.status) {
