@@ -204,16 +204,16 @@ export default function AgentView({
 
       {started && (
         <div className="mt-8 grid gap-4 lg:grid-cols-5">
-          <div className="lg:col-span-2">
-            <div className="lg:sticky lg:top-4 h-[420px] lg:h-[680px]">
+          <div className="min-w-0 lg:col-span-2">
+            <div className="lg:sticky lg:top-4 h-105 lg:h-170">
               <AgentConsole events={events} running={running} />
             </div>
           </div>
-          <div className="lg:col-span-3">
+          <div className="min-w-0 lg:col-span-3">
             {result ? (
               <GrowthResultView signals={result.signals} gen={result.gen} />
             ) : (
-              <div className="grid h-[420px] place-items-center rounded-xl border border-dashed border-white/10 lg:h-[680px]">
+              <div className="grid h-105 place-items-center rounded-xl border border-dashed border-white/10 lg:h-170">
                 <p className="text-sm text-white/40">
                   {running
                     ? "Agent is working — Gemini authoring the launch plan…"
