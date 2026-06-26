@@ -11,7 +11,13 @@
 //   { action: "synthesize", product, jobId }   -> fetch result, map + Gemini -> signals + gen
 
 import { NextRequest, NextResponse } from "next/server";
-import { hasLiveCredentials, submitJob, pollJob, isDone, resultOf } from "@/lib/kinetk/client";
+import {
+  hasLiveCredentials,
+  submitJob,
+  pollJob,
+  isDone,
+  resultOf,
+} from "@/lib/kinetk/client";
 import { mapGrowthSignals } from "@/lib/kinetk/map-insights";
 import { synthesizeGrowth, hasGeminiKey } from "@/lib/kinetk/synthesize";
 
@@ -23,7 +29,33 @@ const MAX_PRODUCT_LEN = 160;
 const json = (obj: unknown, status = 200) =>
   NextResponse.json(obj, { status, headers: { "cache-control": "no-store" } });
 
+const RATE_LIMIT = 30;
+const RATE_WINDOW_MS = 60_000;
+const hits = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(req: NextRequest): boolean {
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "unknown";
+  const now = Date.now();
+  const e = hits.get(ip);
+  if (!e || now > e.resetAt) {
+    hits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  e.count += 1;
+  return e.count > RATE_LIMIT;
+}
+
 export async function POST(req: NextRequest) {
+  if (isRateLimited(req)) {
+    return json(
+      { error: "Too many requests - slow down and try again shortly." },
+      429,
+    );
+  }
+
   let body: { action?: string; product?: string; jobId?: string };
   try {
     body = await req.json();
@@ -43,10 +75,14 @@ export async function POST(req: NextRequest) {
     try {
       const p = await pollJob(body.jobId);
       if (p.error) return json({ error: p.error }, 502);
-      if (!isDone(p.status)) return json({ phase: "running", status: p.status });
+      if (!isDone(p.status))
+        return json({ phase: "running", status: p.status });
       return json({ phase: "ready" });
     } catch (err) {
-      return json({ error: err instanceof Error ? err.message : "poll failed" }, 502);
+      return json(
+        { error: err instanceof Error ? err.message : "poll failed" },
+        502,
+      );
     }
   }
 
@@ -59,13 +95,17 @@ export async function POST(req: NextRequest) {
     try {
       const p = await pollJob(body.jobId);
       if (p.error) return json({ error: p.error }, 502);
-      if (!isDone(p.status)) return json({ phase: "running", status: p.status });
+      if (!isDone(p.status))
+        return json({ phase: "running", status: p.status });
 
       const signals = mapGrowthSignals(product, await resultOf(p));
       const gen = await synthesizeGrowth(signals);
       return json({ phase: "done", signals, gen });
     } catch (err) {
-      return json({ error: err instanceof Error ? err.message : "synthesis failed" }, 502);
+      return json(
+        { error: err instanceof Error ? err.message : "synthesis failed" },
+        502,
+      );
     }
   }
 
@@ -77,8 +117,15 @@ export async function POST(req: NextRequest) {
       window: "all",
       includeSignals: true, // turns on the insights[]/narrativeInsights[]/tagInsights[] prose arrays
     });
-    return json({ phase: "queued", jobId: sub.jobId, fromCache: !!sub.fromCache });
+    return json({
+      phase: "queued",
+      jobId: sub.jobId,
+      fromCache: !!sub.fromCache,
+    });
   } catch (err) {
-    return json({ error: err instanceof Error ? err.message : "submit failed" }, 502);
+    return json(
+      { error: err instanceof Error ? err.message : "submit failed" },
+      502,
+    );
   }
 }

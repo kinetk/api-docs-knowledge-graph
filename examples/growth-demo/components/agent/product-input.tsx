@@ -13,11 +13,13 @@ const EXAMPLES = [
 export default function ProductInput({
   onRun,
   running,
+  initialValue = "",
 }: {
   onRun: (product: string) => void;
   running: boolean;
+  initialValue?: string;
 }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue);
 
   function submit(v: string) {
     const t = v.trim();

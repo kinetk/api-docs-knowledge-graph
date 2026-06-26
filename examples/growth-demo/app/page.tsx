@@ -3,7 +3,17 @@ import AgentView from "@/components/agent/agent-view";
 
 const API_ACCESS_URL = "https://platform.kinetk.ai/login";
 
-export default function Home() {
+const MAX_QUERY_LEN = 160;
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const { q } = await searchParams;
+  const raw = Array.isArray(q) ? q[0] : q;
+  const initialQuery = (raw ?? "").trim().slice(0, MAX_QUERY_LEN);
+
   return (
     <main className="w-full">
       <section className="relative overflow-hidden py-16 sm:py-24">
@@ -11,7 +21,7 @@ export default function Home() {
           <p className="mb-8 text-center text-xs font-medium uppercase tracking-[0.22em] text-kinetk-cyan">
             KINETK API + MCP · Live Demo
           </p>
-          <AgentView />
+          <AgentView initialQuery={initialQuery} />
         </div>
       </section>
 
@@ -39,9 +49,14 @@ export default function Home() {
                 body: "Per-platform engagement premiums, amplifier scores and tag arbitrage rank the channels and hooks — so 'how do I launch this' becomes a defensible, prioritized plan.",
               },
             ].map((c) => (
-              <div key={c.title} className="space-y-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-6">
+              <div
+                key={c.title}
+                className="space-y-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-6"
+              >
                 <h3 className="text-lg font-semibold text-white">{c.title}</h3>
-                <p className="text-sm leading-relaxed text-white/60">{c.body}</p>
+                <p className="text-sm leading-relaxed text-white/60">
+                  {c.body}
+                </p>
               </div>
             ))}
           </div>
