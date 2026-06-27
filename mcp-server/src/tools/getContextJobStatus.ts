@@ -3,9 +3,8 @@
 // the polling path avoids accidentally pulling a 300 KB blob across stdio
 // every poll cycle.
 
-import type { GraphServiceClient } from "../client";
 import { getContextJobStatusInputSchema } from "../schemas";
-import type { JobKind, McpJobStatus } from "../types";
+import type { GraphJobsPort, JobKind, McpJobStatus } from "../types";
 
 export type GetContextJobStatusOutput = {
   jobId: string;
@@ -19,7 +18,7 @@ export type GetContextJobStatusOutput = {
 
 export async function getContextJobStatus(
   rawInput: unknown,
-  client: GraphServiceClient
+  client: GraphJobsPort
 ): Promise<GetContextJobStatusOutput> {
   const { jobId } = getContextJobStatusInputSchema.parse(rawInput);
   const job = await client.getJob(jobId);

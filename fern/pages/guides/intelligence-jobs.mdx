@@ -8,7 +8,7 @@ All heavy intelligence work runs through one async endpoint pair:
 - `POST /intelligence/jobs` — submit a job, get a `jobId` immediately.
 - `GET /intelligence/jobs/{id}` — poll status; once `succeeded`, the response carries the result.
 
-This page covers the lifecycle, the four supported `kind` values, the cache + dedup semantics, and the failure modes.
+This page covers the lifecycle, the two supported `kind` values, the cache + dedup semantics, and the failure modes.
 
 ## Why async
 
@@ -18,21 +18,19 @@ The intelligence pipeline does real work: text embeddings, multimodal vector sea
 
 | `kind` | Input | Output | Cache window |
 |---|---|---|---|
-| `intelligence_records` | `query` + filters | The matching content items | 15 min |
-| `intelligence_signals` | `query` only | Insight signals only — LLM arbitrage lines | 1 h |
-| `campaign_brief` | `campaign` object | Persisted LLM-generated brief | 6 h |
-| `llm_context` | `campaign` object | Raw campaign context bundle (no generated brief) | 6 h |
+| `records` | `query` + filters | The matching content items | 15 min |
+| `insights` | `query`+ filters (+ optional `includeIntelligenceSignals`) | Structured narrative/tag/theme signals | 1 h |
 
-`intelligence_records` / `intelligence_signals` take a free-text `query`. `campaign_brief` / `llm_context` take a structured `campaign` object — see the [API Reference](/api-reference) for full shapes.
+See the [API Reference](/api-reference) for full shapes.
 
-`intelligence_signals` accepts **only** `query` — every other parameter (time window, scan size, platforms, query expansion) is fixed by the service for this kind, and any extra input field returns `400`.
 
-Input filters for the other three kinds (`intelligence_records`, `campaign_brief`, `llm_context`):
+**Input filters apply to the `records` + `insights` kind:**
 
 - `platforms`: e.g. `["TIKTOK", "INSTAGRAM"]`. Defaults to all.
 - `window`: `7d | 30d | all`. **Required** — there is no default; omitting it returns 400. Use `all` for no time filter. A `24h` window is coming soon.
 - `limit`: the number of records to retrieve, `100`–`10000`. **Required** — there is no default; omitting it returns 400, and a value above `10000` returns 400. Jobs are billed per record, so the limit is how you choose your spend (`1000` is a sensible starting point).
-- `expandQuery`: opt in to LLM-backed query expansion (`intelligence_records` only).
+
+Additionally `insights` accepts an optional `includeIntelligenceSignals` boolean — set it to `true` to also get the LLM-written *signals* arrays (otherwise the result is structured data only).
 
 ## Submit response shapes
 
@@ -61,7 +59,7 @@ Responses from the job API have a size limit, so large results are not returned 
 ```json
 {
   "jobId": "01931f7e-...",
-  "kind": "intelligence_records",
+  "kind": "records",
   "status": "succeeded",
   "resultStorage": "s3",
   "resultUrl": "https://...s3.amazonaws.com/jobs/<id>.json?X-Amz-Signature=...",
@@ -77,9 +75,9 @@ Responses from the job API have a size limit, so large results are not returned 
 Jobs are paid in credits:
 
 - **Submit reserves, completion settles.** A fresh `202` includes `estimated_cost` — an upper bound computed from your requested `limit` and `window`, reserved at submit. The final charge is computed from the records actually returned (≤ the estimate) and the unused remainder is released. Cache hits (`200`) are charged at the full rate — the body's `charged` field is the cost.
-- **Insufficient balance → `402`.** The body includes `credits_required`, `credits_available` and a machine-readable recommendation: the largest affordable `limit` for your window, and (for `intelligence_records`) per-window alternatives so you can trade freshness for volume.
+- **Insufficient balance → `402`.** The body includes `credits_required`, `credits_available` and a machine-readable recommendation: the largest affordable `limit` for your window, and (for `records`) per-window alternatives so you can trade freshness for volume.
 - **Headers.** Every billed response carries `X-Kinetk-Credits-Used` (this call) and `X-Kinetk-Credits-Remaining` (your balance).
-- **`intelligence_signals` is flat-priced**: 0.5 credits per request for a fixed 3000-record scan. If the run matches fewer than 1500 records, the job fails (poll shows `status: "failed"` with a refine-your-query message) and the 0.5 credits are refunded in full.
+- **`insights` is flat-priced**: 0.5 credits per request for a fixed 3000-record scan. If the run matches fewer than 1500 records, the job fails (poll shows `status: "failed"` with a refine-your-query message) and the 0.5 credits are refunded in full.
 - **Failed jobs are fully refunded.** Any job that ends `failed` releases its entire reservation.
 
 ## Polling
@@ -92,11 +90,11 @@ Poll every 2–5 seconds. Status flows: `queued` → `running` → `succeeded` |
 
 ```jsonc
 // running
-{ "jobId": "...", "kind": "intelligence_signals", "status": "running",
+{ "jobId": "...", "kind": "insights", "status": "running",
   "submittedAt": 1745859300000, "startedAt": 1745859302100 }
 
 // succeeded
-{ "jobId": "...", "kind": "intelligence_signals", "status": "succeeded",
+{ "jobId": "...", "kind": "insights", "status": "succeeded",
   "submittedAt": 1745859300000, "startedAt": 1745859302100, "completedAt": 1745859315400,
   "result": { /* signals payload — see API reference */ } }
 

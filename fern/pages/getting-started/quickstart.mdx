@@ -3,7 +3,7 @@ title: Quickstart
 description: Your first request — from health check to running an async intelligence job.
 ---
 
-Five minutes from `curl` to a real `intelligence_signals` result. Pick any HTTP client you like; we use `curl` here.
+Five minutes from `curl` to a real `insights` result. Pick any HTTP client you like; we use `curl` here.
 
 ## Prerequisites
 
@@ -36,21 +36,23 @@ If you get `403 { "message": "Forbidden" }`, the API key isn't being sent — ch
 
 ## 2. Submit an async intelligence job
 
-The records / signals / brief / context kinds all run async because they can take 5–20 seconds. Submit returns immediately with a `jobId`:
+Both the `records` and `insights` kinds run async because they can take 5–20 seconds. Submit returns immediately with a `jobId`:
 
 ```bash
 curl -X POST "$API_BASE/intelligence/jobs" \
   -H "x-api-key: $API_KEY" \
   -H "content-type: application/json" \
   -d '{
-    "kind": "intelligence_signals",
+    "kind": "insights",
     "input": {
-      "query": "smart watch launch"
+      "query": "smart watch launch",
+      "window: "7d",
+      "limit: 3000
     }
   }'
 ```
 
-`intelligence_signals` takes exactly one input field — `query`. Everything else (time window, scan size, platforms, query expansion) is managed by the service for this kind; sending any other field returns `400`. The other kinds (`intelligence_records`, `campaign_brief`, `llm_context`) accept filters and **require** an explicit `window` and `limit` — see [Intelligence Jobs](../guides/intelligence-jobs.mdx).
+`insights` takes `query` (required) plus an optional `includeIntelligenceSignals` boolean; everything else (time window, scan size, platforms) is managed by the service for this kind, and any other field returns `400`. The `records` kind accepts filters and **requires** an explicit `window` and `limit` — see [Intelligence Jobs](../guides/intelligence-jobs.mdx).
 
 Three possible responses:
 
@@ -77,16 +79,16 @@ JOB="0190bd6f-..."
 curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
 ```
 
-Poll every 2–5 seconds until `status` flips from `queued` → `running` → `succeeded`. Typical end-to-end time for `intelligence_signals`: 5–20 seconds.
+Poll every 2–5 seconds until `status` flips from `queued` → `running` → `succeeded`. Typical end-to-end time for `insights`: 5–20 seconds.
 
 ```jsonc
 // While running:
-{ "jobId": "0190bd6f-...", "kind": "intelligence_signals", "status": "running", "submittedAt": 1745859300000, "startedAt": 1745859302100 }
+{ "jobId": "0190bd6f-...", "kind": "insights", "status": "running", "submittedAt": 1745859300000, "startedAt": 1745859302100 }
 
 // When done:
 {
   "jobId": "0190bd6f-...",
-  "kind": "intelligence_signals",
+  "kind": "insights",
   "status": "succeeded",
   "submittedAt": 1745859300000,
   "startedAt":   1745859302100,
@@ -97,7 +99,7 @@ Poll every 2–5 seconds until `status` flips from `queued` → `running` → `s
 
 ## 4. Skip the polling — use the MCP
 
-If you'd rather have Claude or Cursor handle the submit/poll loop for you, install the `kinetk` MCP server — see [MCP Installation](../mcp/installation.mdx). The MCP exposes the same `intelligence_signals` flow as a one-tool call with built-in polling and a slim, token-efficient response envelope.
+If you'd rather have Claude or Cursor handle the submit/poll loop for you, install the `kinetk` MCP server — see [MCP Installation](../mcp/installation.mdx). The MCP exposes the same `insights` flow as a one-tool call with built-in polling and a slim, token-efficient response envelope.
 
 ## 5. Trending narratives (precomputed read)
 
@@ -143,6 +145,6 @@ Windows: `7d | 30d`. Limit: 1–50.
 
 ## Next steps
 
-- [Intelligence Jobs](../guides/intelligence-jobs.mdx) — the full async lifecycle, all four `kind` values, dedup + cache semantics, billing.
-- [Narrative Intelligence](../guides/narrative-intelligence.mdx) — what `intelligence_signals` actually returns and how to read it.
+- [Intelligence Jobs](../guides/intelligence-jobs.mdx) — the full async lifecycle, both `kind` values, dedup + cache semantics, billing.
+- [Narrative Intelligence](../guides/narrative-intelligence.mdx) — what `insights` actually returns and how to read it.
 - [API Reference](/api-reference) — every endpoint, every field, every error shape.

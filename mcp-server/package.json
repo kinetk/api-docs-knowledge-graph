@@ -1,6 +1,6 @@
 {
   "name": "kinetk-mcp-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server that exposes the KINETK graph-service async-job API to AI agents via stdio.",
   "main": "dist/index.js",
   "bin": {
@@ -9,10 +9,11 @@
   "scripts": {
     "build": "tsc",
     "lint": "tsc --noEmit",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "prepare": "tsc"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.18.0",
     "dotenv": "^16.0.0",
     "undici": "^6.0.0",
     "zod": "^3.23.0"

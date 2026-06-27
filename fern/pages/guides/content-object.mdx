@@ -1,9 +1,9 @@
 ---
 title: The content object
-description: The ranked content item returned by intelligence_records — its signals and exactly how items are scored.
+description: The ranked content item returned by records — its signals and exactly how items are scored.
 ---
 
-`intelligence_records` returns a `content` array of ranked items. Each item carries the source metadata (platform, title, tags, engagement counts, `publishedAt`, `creatorId`, …) plus a set of **normalized signals** and a single **ranking score** the list is sorted by.
+`records` returns a `content` array of ranked items. Each item carries the source metadata (platform, title, tags, engagement counts, `publishedAt`, `creatorId`, …) plus a set of **normalized signals** and a single **ranking score** the list is sorted by.
 
 Every signal is normalized **within the result set** for that query — values are relative to the other items returned, not absolute.
 
@@ -20,7 +20,7 @@ Every signal is normalized **within the result set** for that query — values a
 | `recencyScore` | How recent vs the oldest/newest item in the set; `0.5` if no date. | `(ts − oldest) / (newest − oldest)` |
 | `engagementDepth` | Like-per-view ratio — engagement quality, not volume. | `views>0 ? min(1, likes/(views+1)) : 0` |
 | `rrfScore` | Reciprocal Rank Fusion across the per-vector result sets (a retrieval-stage signal). | `Σ 1/(rank + 60)` over each vector the item matched |
-| `targetVectors` | Which media vectors the item matched on. | set of vector names from the per-vector queries |
+| `subjectMatch` | Whether the item matched the query's subject (vs. a looser tag-widened match). | boolean |
 | `exampleRankingScore` | The single score the list is sorted by (descending). | see below ↓ |
 
 ## Ranking — `exampleRankingScore`
@@ -49,9 +49,13 @@ The `content` list is returned sorted by `exampleRankingScore` descending.
 
 > Weights are tuned as the ranking model evolves — treat the exact coefficients as current behavior, not a fixed contract.
 
+## Enrichment
+
+Each item also carries an optional `enrichment` object — LLM-derived content attributes used for analysis and filtering: `themes`, `aestheticStyle`, `emotionMood`, `brandProducts`, `tone` (+ `toneConfidence`), `noveltyScore`, `saturationScore`, and a `coverage` flag set (`attributes` / `novelty` / `sentiment`) marking which attributes were computed. Fields are `null` when an attribute wasn't available for that item.
+
 ## Relationship graph edges
 
-`intelligence_records` also returns a `graph` over the result set (see the [API Reference](/api-reference)). Two content nodes are linked by:
+`records` also returns a `graph` over the result set (see the [API Reference](/api-reference)). Two content nodes are linked by:
 
 - **`semantic_similarity`** — when the cosine similarity of their media vectors is **≥ 0.84**.
 - **`tag_overlap`** — otherwise, when the Jaccard overlap of their tags is **≥ 0.28**.

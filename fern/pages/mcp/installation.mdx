@@ -145,7 +145,7 @@ Once installed, ask your client something the MCP can answer:
 
 > Use kinetk to find trending content about smartwatches in the last 7 days.
 
-The client should call `create_context_job` with `kind: "intelligence_records"` (the content itself, filtered to a 7d window, with an explicit `limit` — e.g. 1000), then `get_context_job_status` until succeeded, then `get_context_job_result` for the slim envelope. If it answers from general knowledge instead, you didn't cue the MCP — say `Use kinetk` explicitly.
+The client should call `create_context_job` with `kind: "records"` (the content itself, filtered to a 7d window, with an explicit `limit` — e.g. 1000), then `get_context_job_status` until succeeded, then `get_context_job_result` for the slim envelope. If it answers from general knowledge instead, you didn't cue the MCP — say `Use kinetk` explicitly.
 
 ## Troubleshooting
 

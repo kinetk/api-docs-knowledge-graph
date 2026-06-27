@@ -11,9 +11,13 @@ info:
 
     precomputed narrative reads, and an async job queue for heavy
 
-    intelligence work (`intelligence_records`, `intelligence_signals`,
+    intelligence work (`records`, `insights`,
 
-    `campaign_brief`, `llm_context`).
+    `campaign`). The legacy kind names (intelligence_records /
+
+    intelligence_signals / campaign_brief / llm_context) are still accepted as
+
+    deprecated aliases.
 
 
     Authentication: send your secret key in the `x-api-key` header on every
@@ -50,6 +54,46 @@ servers:
 security:
   - ApiKeyAuth: []
 paths:
+  # /.well-known/oauth-protected-resource:
+  #   get:
+  #     operationId: oauthMetadata
+  #     summary: OauthMetadata
+  #     security:
+  #       - ApiKeyAuth: []
+  #     responses:
+  #       "200":
+  #         description: Successful response
+  #         content:
+  #           application/json:
+  #             schema:
+  #               type: object
+  #         headers:
+  #           X-Kinetk-Credits-Used:
+  #             $ref: "#/components/headers/CreditsUsed"
+  #           X-Kinetk-Credits-Remaining:
+  #             $ref: "#/components/headers/CreditsRemaining"
+  #       default:
+  #         $ref: "#/components/responses/Error"
+  /connect:
+    post:
+      operationId: mcp
+      summary: Mcp
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
   /health:
     get:
       operationId: health
@@ -102,7 +146,7 @@ paths:
         - `402` — insufficient credits; body recommends how to fit your budget.
 
 
-        For `intelligence_records` / `campaign_brief` / `llm_context`, `window`
+        For `records` / `insights`, `window`
 
         (in `input`) is REQUIRED — it drives the credit price (fresher windows
 
@@ -125,15 +169,13 @@ paths:
             schema:
               oneOf:
                 - $ref: "#/components/schemas/IQueryJobSubmitBody"
-                - $ref: "#/components/schemas/ISignalsJobSubmitBody"
-                - $ref: "#/components/schemas/ICampaignJobSubmitBody"
+                # - $ref: "#/components/schemas/ICampaignJobSubmitBody"
               discriminator:
                 propertyName: kind
                 mapping:
-                  intelligence_records: "#/components/schemas/IQueryJobSubmitBody"
-                  intelligence_signals: "#/components/schemas/ISignalsJobSubmitBody"
-                  campaign_brief: "#/components/schemas/ICampaignJobSubmitBody"
-                  llm_context: "#/components/schemas/ICampaignJobSubmitBody"
+                  insights: "#/components/schemas/IQueryJobSubmitBody"
+                  records: "#/components/schemas/IQueryJobSubmitBody"
+                  # campaign: "#/components/schemas/ICampaignJobSubmitBody"
       responses:
         "200":
           description: Successful response
@@ -204,6 +246,166 @@ paths:
               $ref: "#/components/headers/CreditsRemaining"
         default:
           $ref: "#/components/responses/Error"
+  /mcp:
+    post:
+      operationId: mcp
+      summary: Mcp
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
+  # "/narratives/{id}":
+  #   get:
+  #     operationId: narrativeDetail
+  #     summary: Drill into one precomputed narrative
+  #     description: Full evidence bundle for one narrative cluster — header, content
+  #       rows, top creators, per-platform breakdown, duplicate groups.
+  #     security:
+  #       - ApiKeyAuth: []
+  #     parameters:
+  #       - name: id
+  #         in: path
+  #         required: true
+  #         schema:
+  #           minLength: 1
+  #           type: string
+  #     responses:
+  #       "200":
+  #         description: Successful response
+  #         content:
+  #           application/json:
+  #             schema:
+  #               $ref: "#/components/schemas/INarrativeDetailResponse"
+  #         headers:
+  #           X-Kinetk-Credits-Used:
+  #             $ref: "#/components/headers/CreditsUsed"
+  #           X-Kinetk-Credits-Remaining:
+  #             $ref: "#/components/headers/CreditsRemaining"
+  #       default:
+  #         $ref: "#/components/responses/Error"
+  # "/narratives/{id}/trajectory":
+  #   get:
+  #     operationId: narrativeTrajectory
+  #     summary: Narrative trajectory
+  #     security:
+  #       - ApiKeyAuth: []
+  #     parameters:
+  #       - name: id
+  #         in: path
+  #         required: true
+  #         schema:
+  #           minLength: 1
+  #           type: string
+  #       - name: limit
+  #         in: query
+  #         required: false
+  #         schema:
+  #           type: string
+  #     responses:
+  #       "200":
+  #         description: Successful response
+  #         content:
+  #           application/json:
+  #             schema:
+  #               $ref: "#/components/schemas/INarrativeTrajectoryResponse"
+  #         headers:
+  #           X-Kinetk-Credits-Used:
+  #             $ref: "#/components/headers/CreditsUsed"
+  #           X-Kinetk-Credits-Remaining:
+  #             $ref: "#/components/headers/CreditsRemaining"
+  #       default:
+  #         $ref: "#/components/responses/Error"
+  # /narratives/search:
+  #   get:
+  #     operationId: narrativesSearch
+  #     summary: Filtered search over precomputed narratives
+  #     description: "Free-text search over precomputed narrative clusters, ranked by
+  #       relevance. For live retrieval, use `POST /intelligence/jobs` with `kind:
+  #       insights`."
+  #     security:
+  #       - ApiKeyAuth: []
+  #     parameters:
+  #       - name: limit
+  #         in: query
+  #         required: false
+  #         schema:
+  #           type: string
+  #       - name: q
+  #         in: query
+  #         required: true
+  #         schema:
+  #           minLength: 1
+  #           type: string
+  #       - name: window
+  #         in: query
+  #         required: false
+  #         schema:
+  #           enum:
+  #             - 30d
+  #             - 7d
+  #           type: string
+  #     responses:
+  #       "200":
+  #         description: Successful response
+  #         content:
+  #           application/json:
+  #             schema:
+  #               $ref: "#/components/schemas/INarrativeSearchResponse"
+  #         headers:
+  #           X-Kinetk-Credits-Used:
+  #             $ref: "#/components/headers/CreditsUsed"
+  #           X-Kinetk-Credits-Remaining:
+  #             $ref: "#/components/headers/CreditsRemaining"
+  #       default:
+  #         $ref: "#/components/responses/Error"
+  # /narratives/trending:
+    # get:
+    #   operationId: narrativesTrending
+    #   summary: Top precomputed narratives for a window
+    #   description: "Reads precomputed narrative clusters for a bounded window. For
+    #     live retrieval, submit `POST /intelligence/jobs` with `kind: insights`."
+    #   security:
+    #     - ApiKeyAuth: []
+    #   parameters:
+    #     - name: limit
+        #   in: query
+        #   required: false
+        #   schema:
+        #     type: string
+        # - name: window
+        #   in: query
+        #   required: false
+        #   schema:
+        #     enum:
+        #       - 30d
+        #       - 7d
+        #     type: string
+      # responses:
+      #   "200":
+      #     description: Successful response
+      #     content:
+      #       application/json:
+      #         schema:
+      #           $ref: "#/components/schemas/ITrendingResponse"
+      #     headers:
+      #       X-Kinetk-Credits-Used:
+      #         $ref: "#/components/headers/CreditsUsed"
+      #       X-Kinetk-Credits-Remaining:
+      #         $ref: "#/components/headers/CreditsRemaining"
+      #   default:
+      #     $ref: "#/components/responses/Error"
   /usage:
     get:
       operationId: usage
@@ -281,10 +483,15 @@ components:
       properties:
         audience:
           type: string
-        campaign:
-          type: string
         limit:
           type: number
+        output:
+          description: "Output mode: 'brief' (default) generates + saves a brief;
+            'context' returns the raw campaign-context bundle."
+          enum:
+            - brief
+            - context
+          type: string
         platforms:
           description: Platforms to filter by. Case-insensitive.
           items:
@@ -297,613 +504,18 @@ components:
               - x
             type: string
           type: array
+        query:
+          description: The campaign topic/description (free text) — keyed by `query`,
+            unified with records/insights.
+          type: string
         tone:
           type: string
         window:
           $ref: "#/components/schemas/PublicJobWindow"
       required:
-        - campaign
         - limit
+        - query
         - window
-      type: object
-    ICampaignBriefJobResult:
-      additionalProperties: false
-      properties:
-        brief:
-          additionalProperties: false
-          properties:
-            campaign:
-              type: string
-            contentAngles:
-              items:
-                type: string
-              type: array
-            creatorArchetypes:
-              items:
-                type: string
-              type: array
-            emergingNarrativesToTest:
-              items:
-                type: string
-              type: array
-            evidence:
-              items:
-                additionalProperties: false
-                properties:
-                  description:
-                    type: string
-                    nullable: true
-                  likes:
-                    type: number
-                  platform:
-                    type: string
-                    nullable: true
-                  tags:
-                    items:
-                      type: string
-                    type: array
-                  title:
-                    type: string
-                    nullable: true
-                  uuid:
-                    type: string
-                  views:
-                    type: number
-                required:
-                  - likes
-                  - tags
-                  - uuid
-                  - views
-                type: object
-              type: array
-            narrativesToRide:
-              items:
-                additionalProperties: false
-                properties:
-                  emergingScore:
-                    type: number
-                  id:
-                    type: string
-                  label:
-                    type: string
-                  momentumScore:
-                    type: number
-                  summary:
-                    type: string
-                  topTags:
-                    items:
-                      type: string
-                    type: array
-                required:
-                  - emergingScore
-                  - id
-                  - label
-                  - momentumScore
-                  - summary
-                  - topTags
-                type: object
-              type: array
-            platformStrategy:
-              items:
-                additionalProperties: false
-                properties:
-                  platform:
-                    type: string
-                    nullable: true
-                  recommendation:
-                    type: string
-                required:
-                  - recommendation
-                type: object
-              type: array
-            positioning:
-              items:
-                type: string
-              type: array
-            recommendedCreators:
-              items:
-                additionalProperties: false
-                properties:
-                  amplifierScore:
-                    type: number
-                  id:
-                    type: number
-                  platform:
-                    type: string
-                  totalEngagement:
-                    type: number
-                required:
-                  - amplifierScore
-                  - id
-                  - platform
-                  - totalEngagement
-                type: object
-              type: array
-            topTags:
-              items:
-                type: string
-              type: array
-          required:
-            - campaign
-            - contentAngles
-            - creatorArchetypes
-            - emergingNarrativesToTest
-            - evidence
-            - narrativesToRide
-            - platformStrategy
-            - positioning
-            - recommendedCreators
-            - topTags
-          type: object
-        context:
-          additionalProperties: false
-          properties:
-            campaign:
-              type: string
-            creators:
-              items:
-                additionalProperties: false
-                properties:
-                  amplifier_score:
-                    type: number
-                  content_count:
-                    type: number
-                  follower_count:
-                    type: number
-                    nullable: true
-                  id:
-                    type: number
-                  platform:
-                    type: string
-                  total_engagement:
-                    type: number
-                required:
-                  - amplifier_score
-                  - content_count
-                  - id
-                  - platform
-                  - total_engagement
-                type: object
-              type: array
-            graph:
-              additionalProperties: false
-              properties:
-                edges:
-                  items:
-                    additionalProperties: false
-                    properties:
-                      source:
-                        type: string
-                      target:
-                        type: string
-                      type:
-                        enum:
-                          - contains
-                          - creator_posted
-                          - semantic_similarity
-                          - tag_overlap
-                          - tagged_with
-                        type: string
-                      weight:
-                        type: number
-                    required:
-                      - source
-                      - target
-                      - type
-                      - weight
-                    type: object
-                  type: array
-                nodes:
-                  items:
-                    additionalProperties: false
-                    properties:
-                      creatorId:
-                        type: number
-                      id:
-                        type: string
-                      label:
-                        type: string
-                      score:
-                        type: number
-                      type:
-                        enum:
-                          - content
-                          - creator
-                          - narrative
-                          - tag
-                        type: string
-                    required:
-                      - id
-                      - label
-                      - type
-                    type: object
-                  type: array
-              required:
-                - edges
-                - nodes
-              type: object
-            input:
-              additionalProperties: false
-              properties:
-                campaign:
-                  type: string
-                platforms:
-                  items:
-                    type: string
-                  type: array
-                tone:
-                  default: specific, evidence-backed
-                  type: string
-                window:
-                  $ref: "#/components/schemas/NarrativeWindow"
-              required:
-                - campaign
-                - platforms
-                - tone
-                - window
-              type: object
-            narratives:
-              items:
-                additionalProperties: false
-                properties:
-                  content_count:
-                    type: number
-                  creator_count:
-                    type: number
-                  emerging_score:
-                    type: number
-                  id:
-                    type: string
-                  label:
-                    type: string
-                  momentum_score:
-                    type: number
-                  platform_count:
-                    type: number
-                  score_breakdown:
-                    additionalProperties: false
-                    properties:
-                      creatorDiversity:
-                        type: number
-                      engagementStrength:
-                        type: number
-                      platformSpread:
-                        type: number
-                      recencyStrength:
-                        type: number
-                    required:
-                      - creatorDiversity
-                      - engagementStrength
-                      - platformSpread
-                      - recencyStrength
-                    type: object
-                  summary:
-                    type: string
-                  top_tags:
-                    items:
-                      type: string
-                    type: array
-                  total_engagement:
-                    type: number
-                required:
-                  - content_count
-                  - creator_count
-                  - emerging_score
-                  - id
-                  - label
-                  - momentum_score
-                  - platform_count
-                  - score_breakdown
-                  - summary
-                  - top_tags
-                  - total_engagement
-                type: object
-              type: array
-            platformOpportunities:
-              items:
-                additionalProperties: false
-                properties:
-                  avgEngagement:
-                    type: number
-                  baselineEngagement:
-                    type: number
-                  contentCount:
-                    type: number
-                  creatorCount:
-                    type: number
-                  dominantPlatform:
-                    type: string
-                  engagementPremiumPct:
-                    type: number
-                  narrativeId:
-                    type: string
-                  narrativeLabel:
-                    type: string
-                  opportunity:
-                    type: string
-                  opportunityScore:
-                    type: number
-                  platformConcentration:
-                    type: number
-                  platformDistribution:
-                    $ref: "#/components/schemas/Record<string,number>"
-                required:
-                  - avgEngagement
-                  - baselineEngagement
-                  - contentCount
-                  - creatorCount
-                  - dominantPlatform
-                  - engagementPremiumPct
-                  - narrativeId
-                  - narrativeLabel
-                  - opportunity
-                  - opportunityScore
-                  - platformConcentration
-                  - platformDistribution
-                type: object
-              type: array
-            representativeContent:
-              items:
-                additionalProperties: false
-                properties:
-                  comment_count:
-                    type: number
-                  description:
-                    type: string
-                    nullable: true
-                  like_count:
-                    type: number
-                  platform:
-                    type: string
-                    nullable: true
-                  share_count:
-                    type: number
-                  tags:
-                    items:
-                      type: string
-                    type: array
-                  title:
-                    type: string
-                    nullable: true
-                  uuid:
-                    type: string
-                  view_count:
-                    type: number
-                required:
-                  - comment_count
-                  - like_count
-                  - share_count
-                  - tags
-                  - uuid
-                  - view_count
-                type: object
-              type: array
-            retrieval:
-              additionalProperties: false
-              properties:
-                candidatesSeen:
-                  type: number
-                filteredBreakdown:
-                  additionalProperties: false
-                  properties:
-                    canonical:
-                      type: number
-                    platform:
-                      type: number
-                    window:
-                      type: number
-                  required:
-                    - canonical
-                    - platform
-                    - window
-                  type: object
-                filteredCandidates:
-                  type: number
-                identityMatchedCandidates:
-                  type: number
-                joinBreakdown:
-                  additionalProperties: false
-                  properties:
-                    contentPlatformId:
-                      type: number
-                    uuid:
-                      type: number
-                    weaviateId:
-                      type: number
-                  required:
-                    - contentPlatformId
-                    - uuid
-                    - weaviateId
-                  type: object
-                joinedResults:
-                  type: number
-                matchedCandidates:
-                  type: number
-                mergeMethod:
-                  enum:
-                    - reciprocal_rank_fusion
-                  type: string
-                resultsReturned:
-                  type: number
-                tagWidening:
-                  additionalProperties: false
-                  properties:
-                    phaseAContentCount:
-                      type: number
-                    skipped:
-                      type: boolean
-                    source:
-                      enum:
-                        - none
-                        - phase_a_top_tags
-                        - query_hashtags
-                      type: string
-                    widenTags:
-                      items:
-                        type: string
-                      type: array
-                    widenedCount:
-                      type: number
-                  required:
-                    - phaseAContentCount
-                    - skipped
-                    - source
-                    - widenTags
-                    - widenedCount
-                  type: object
-                unmatchedCandidates:
-                  type: number
-                unmatchedSamples:
-                  items:
-                    additionalProperties: false
-                    properties:
-                      contentId:
-                        type: string
-                        nullable: true
-                      contentPlatformId:
-                        type: string
-                        nullable: true
-                      distance:
-                        type: number
-                        nullable: true
-                      matchedBy:
-                        enum:
-                          - contentPlatformId
-                          - uuid
-                          - weaviateId
-                        type: string
-                        nullable: true
-                      mediaType:
-                        type: string
-                        nullable: true
-                      platform:
-                        type: string
-                        nullable: true
-                      postgresCanonicalUuid:
-                        type: string
-                        nullable: true
-                      postgresPlatform:
-                        type: string
-                        nullable: true
-                      postgresPublishedAt:
-                        type: string
-                        nullable: true
-                      postgresUuid:
-                        type: string
-                        nullable: true
-                      rawSimilarity:
-                        type: number
-                      reason:
-                        enum:
-                          - no_postgres_identity_match
-                          - postgres_row_filtered_canonical
-                          - postgres_row_filtered_platform
-                          - postgres_row_filtered_window
-                        type: string
-                      rrfScore:
-                        type: number
-                      sourceUrl:
-                        type: string
-                        nullable: true
-                      weaviateObjectId:
-                        type: string
-                        nullable: true
-                    required:
-                      - contentId
-                      - contentPlatformId
-                      - distance
-                      - matchedBy
-                      - mediaType
-                      - platform
-                      - postgresCanonicalUuid
-                      - postgresPlatform
-                      - postgresPublishedAt
-                      - postgresUuid
-                      - rawSimilarity
-                      - reason
-                      - rrfScore
-                      - sourceUrl
-                      - weaviateObjectId
-                    type: object
-                  type: array
-                vectorDiagnostics:
-                  items:
-                    additionalProperties: false
-                    properties:
-                      candidatesReturned:
-                        type: number
-                      error:
-                        type: string
-                      query:
-                        type: string
-                      status:
-                        enum:
-                          - failed
-                          - ok
-                        type: string
-                      targetVector:
-                        type: string
-                    required:
-                      - candidatesReturned
-                      - query
-                      - status
-                      - targetVector
-                    type: object
-                  type: array
-                vectorTargets:
-                  items:
-                    type: string
-                  type: array
-              required:
-                - candidatesSeen
-                - filteredBreakdown
-                - filteredCandidates
-                - identityMatchedCandidates
-                - joinBreakdown
-                - joinedResults
-                - matchedCandidates
-                - mergeMethod
-                - resultsReturned
-                - unmatchedCandidates
-                - vectorDiagnostics
-                - vectorTargets
-              type: object
-            sourceContentUuids:
-              items:
-                type: string
-              type: array
-            sourceNarrativeIds:
-              items:
-                type: string
-              type: array
-            topTags:
-              items:
-                type: string
-              type: array
-          required:
-            - campaign
-            - creators
-            - graph
-            - input
-            - narratives
-            - platformOpportunities
-            - representativeContent
-            - sourceContentUuids
-            - sourceNarrativeIds
-            - topTags
-          type: object
-        createdAt:
-          type: string
-        id:
-          type: string
-        recordCount:
-          type: number
-      required:
-        - brief
-        - context
-        - createdAt
-        - id
-        - recordCount
       type: object
     ICampaignJobSubmitBody:
       additionalProperties: false
@@ -912,8 +524,7 @@ components:
           $ref: "#/components/schemas/ICampaignBriefInput"
         kind:
           enum:
-            - campaign_brief
-            - llm_context
+            - campaign
           type: string
       required:
         - input
@@ -1031,6 +642,910 @@ components:
         - insertedCount
         - processedCount
       type: object
+    IInsightsJobResult:
+      additionalProperties: false
+      properties:
+        attributeLifts:
+          items:
+            additionalProperties: false
+            properties:
+              lifts:
+                items:
+                  additionalProperties: false
+                  properties:
+                    avgWith:
+                      type: number
+                    avgWithout:
+                      type: number
+                    countWith:
+                      type: number
+                    countWithout:
+                      type: number
+                    liftPct:
+                      type: number
+                    tag:
+                      type: string
+                  required:
+                    - avgWith
+                    - avgWithout
+                    - countWith
+                    - countWithout
+                    - liftPct
+                    - tag
+                  type: object
+                type: array
+              narrativeId:
+                type: string
+              narrativeLabel:
+                type: string
+            required:
+              - lifts
+              - narrativeId
+              - narrativeLabel
+            type: object
+          type: array
+        content:
+          items:
+            $ref: "#/components/schemas/PublicRankedContent"
+          type: array
+        contentGraph:
+          additionalProperties: false
+          properties:
+            edges:
+              items:
+                additionalProperties: false
+                properties:
+                  source:
+                    type: string
+                  target:
+                    type: string
+                  type:
+                    enum:
+                      - contains
+                      - creator_posted
+                      - semantic_similarity
+                      - tag_overlap
+                      - tagged_with
+                    type: string
+                  weight:
+                    type: number
+                required:
+                  - source
+                  - target
+                  - type
+                  - weight
+                type: object
+              type: array
+            nodes:
+              items:
+                additionalProperties: false
+                properties:
+                  creatorId:
+                    type: number
+                  id:
+                    type: string
+                  label:
+                    type: string
+                  score:
+                    type: number
+                  type:
+                    enum:
+                      - content
+                      - creator
+                      - narrative
+                      - tag
+                    type: string
+                required:
+                  - id
+                  - label
+                  - type
+                type: object
+              type: array
+          required:
+            - edges
+            - nodes
+          type: object
+        creatorGraph:
+          additionalProperties: false
+          properties:
+            edges:
+              items:
+                additionalProperties: false
+                properties:
+                  source:
+                    type: string
+                  target:
+                    type: string
+                  type:
+                    enum:
+                      - contains
+                      - creator_posted
+                      - semantic_similarity
+                      - tag_overlap
+                      - tagged_with
+                    type: string
+                  weight:
+                    type: number
+                required:
+                  - source
+                  - target
+                  - type
+                  - weight
+                type: object
+              type: array
+            nodes:
+              items:
+                additionalProperties: false
+                properties:
+                  creatorId:
+                    type: number
+                  id:
+                    type: string
+                  label:
+                    type: string
+                  score:
+                    type: number
+                  type:
+                    enum:
+                      - content
+                      - creator
+                      - narrative
+                      - tag
+                    type: string
+                required:
+                  - id
+                  - label
+                  - type
+                type: object
+              type: array
+          required:
+            - edges
+            - nodes
+          type: object
+        creators:
+          items:
+            additionalProperties: false
+            properties:
+              amplifierScore:
+                type: number
+              avgFinalScore:
+                type: number
+              contentCount:
+                type: number
+              creatorId:
+                type: number
+                nullable: true
+              followerCount:
+                type: number
+                nullable: true
+              platform:
+                type: string
+              totalEngagement:
+                type: number
+            required:
+              - amplifierScore
+              - avgFinalScore
+              - contentCount
+              - platform
+              - totalEngagement
+            type: object
+          type: array
+        generatedAt:
+          type: string
+        graph:
+          additionalProperties: false
+          properties:
+            edges:
+              items:
+                additionalProperties: false
+                properties:
+                  source:
+                    type: string
+                  target:
+                    type: string
+                  type:
+                    enum:
+                      - contains
+                      - creator_posted
+                      - semantic_similarity
+                      - tag_overlap
+                      - tagged_with
+                    type: string
+                  weight:
+                    type: number
+                required:
+                  - source
+                  - target
+                  - type
+                  - weight
+                type: object
+              type: array
+            nodes:
+              items:
+                additionalProperties: false
+                properties:
+                  creatorId:
+                    type: number
+                  id:
+                    type: string
+                  label:
+                    type: string
+                  score:
+                    type: number
+                  type:
+                    enum:
+                      - content
+                      - creator
+                      - narrative
+                      - tag
+                    type: string
+                required:
+                  - id
+                  - label
+                  - type
+                type: object
+              type: array
+          required:
+            - edges
+            - nodes
+          type: object
+        insights:
+          items:
+            type: string
+          type: array
+        narrativeGraph:
+          additionalProperties: false
+          properties:
+            edges:
+              items:
+                additionalProperties: false
+                properties:
+                  source:
+                    type: string
+                  target:
+                    type: string
+                  type:
+                    enum:
+                      - contains
+                      - creator_posted
+                      - semantic_similarity
+                      - tag_overlap
+                      - tagged_with
+                    type: string
+                  weight:
+                    type: number
+                required:
+                  - source
+                  - target
+                  - type
+                  - weight
+                type: object
+              type: array
+            nodes:
+              items:
+                additionalProperties: false
+                properties:
+                  creatorId:
+                    type: number
+                  id:
+                    type: string
+                  label:
+                    type: string
+                  score:
+                    type: number
+                  type:
+                    enum:
+                      - content
+                      - creator
+                      - narrative
+                      - tag
+                    type: string
+                required:
+                  - id
+                  - label
+                  - type
+                type: object
+              type: array
+          required:
+            - edges
+            - nodes
+          type: object
+        narrativeInsights:
+          items:
+            type: string
+          type: array
+        narrativeSaturation:
+          items:
+            additionalProperties: false
+            properties:
+              available:
+                type: boolean
+              coveredCount:
+                type: number
+              narrativeId:
+                type: string
+              narrativeLabel:
+                type: string
+              saturation:
+                type: number
+                nullable: true
+              saturationCoverage:
+                type: number
+            required:
+              - available
+              - coveredCount
+              - narrativeId
+              - narrativeLabel
+              - saturation
+              - saturationCoverage
+            type: object
+          type: array
+        narrativeSentiment:
+          items:
+            additionalProperties: false
+            properties:
+              dominantTone:
+                type: string
+                nullable: true
+              membersWithSentiment:
+                type: number
+              narrativeId:
+                type: string
+              narrativeLabel:
+                type: string
+              netStance:
+                type: number
+                nullable: true
+              stance:
+                type: object
+                properties:
+                  supportive:
+                    type: number
+                  critical:
+                    type: number
+                  neutral:
+                    type: number
+                  mixed:
+                    type: number
+                required:
+                  - supportive
+                  - critical
+                  - neutral
+                  - mixed
+                additionalProperties: false
+                nullable: true
+              stanceAvailable:
+                type: boolean
+              stanceCoverage:
+                type: number
+              stanceScored:
+                type: number
+              toneAvailable:
+                type: boolean
+              toneCoverage:
+                type: number
+            required:
+              - dominantTone
+              - membersWithSentiment
+              - narrativeId
+              - narrativeLabel
+              - netStance
+              - stance
+              - stanceAvailable
+              - stanceCoverage
+              - stanceScored
+              - toneAvailable
+              - toneCoverage
+            type: object
+          type: array
+        narratives:
+          items:
+            additionalProperties: false
+            properties:
+              contentCount:
+                type: number
+              contentUuids:
+                items:
+                  type: string
+                type: array
+              creatorCount:
+                type: number
+              id:
+                type: string
+              label:
+                type: string
+              persistentLink:
+                anyOf:
+                  - additionalProperties: false
+                    properties:
+                      acceleration:
+                        type: number
+                        nullable: true
+                      diffusion:
+                        type: number
+                        nullable: true
+                      emergingScore:
+                        type: number
+                        nullable: true
+                      label:
+                        type: string
+                      lifecycle:
+                        type: string
+                        nullable: true
+                      matchConfidence:
+                        enum:
+                          - high
+                          - medium
+                        type: string
+                      matchScore:
+                        type: number
+                      momentumScore:
+                        type: number
+                        nullable: true
+                      narrativeKey:
+                        type: string
+                      sentimentLabel:
+                        type: string
+                        nullable: true
+                      sentimentScore:
+                        type: number
+                        nullable: true
+                      sharedTerms:
+                        items:
+                          type: string
+                        type: array
+                      status:
+                        enum:
+                          - linked
+                        type: string
+                      trajectoryConfidence:
+                        type: string
+                        nullable: true
+                      velocity:
+                        type: number
+                        nullable: true
+                    required:
+                      - acceleration
+                      - diffusion
+                      - emergingScore
+                      - label
+                      - lifecycle
+                      - matchConfidence
+                      - matchScore
+                      - momentumScore
+                      - narrativeKey
+                      - sentimentLabel
+                      - sentimentScore
+                      - sharedTerms
+                      - status
+                      - trajectoryConfidence
+                      - velocity
+                    type: object
+                  - additionalProperties: false
+                    properties:
+                      status:
+                        enum:
+                          - net_new
+                        type: string
+                    required:
+                      - status
+                    type: object
+                  - additionalProperties: false
+                    properties:
+                      reason:
+                        enum:
+                          - insufficient_signal
+                          - no_persistent_generation
+                        type: string
+                      status:
+                        enum:
+                          - unavailable
+                        type: string
+                    required:
+                      - reason
+                      - status
+                    type: object
+              platformCount:
+                type: number
+              queryRelevance:
+                type: number
+              representativeContent:
+                items:
+                  $ref: "#/components/schemas/PublicRankedContent"
+                type: array
+              scoreBreakdown:
+                additionalProperties: false
+                properties:
+                  creatorDiversity:
+                    type: number
+                  engagementStrength:
+                    type: number
+                  platformSpread:
+                    type: number
+                  recencyStrength:
+                    type: number
+                required:
+                  - creatorDiversity
+                  - engagementStrength
+                  - platformSpread
+                  - recencyStrength
+                type: object
+              summary:
+                type: string
+              topTags:
+                items:
+                  type: string
+                type: array
+              topThemes:
+                items:
+                  type: string
+                type: array
+              totalEngagement:
+                type: number
+              trendScore:
+                type: number
+            required:
+              - contentCount
+              - contentUuids
+              - creatorCount
+              - id
+              - label
+              - platformCount
+              - representativeContent
+              - scoreBreakdown
+              - summary
+              - topTags
+              - topThemes
+              - totalEngagement
+              - trendScore
+            type: object
+          type: array
+        platformOpportunities:
+          items:
+            additionalProperties: false
+            properties:
+              avgEngagement:
+                type: number
+              baselineEngagement:
+                type: number
+              contentCount:
+                type: number
+              creatorCount:
+                type: number
+              dominantPlatform:
+                type: string
+              engagementPremiumPct:
+                type: number
+              narrativeId:
+                type: string
+              narrativeLabel:
+                type: string
+              opportunity:
+                type: string
+              opportunityScore:
+                type: number
+              platformConcentration:
+                type: number
+              platformDistribution:
+                type: object
+                additionalProperties:
+                  type: number
+            required:
+              - avgEngagement
+              - baselineEngagement
+              - contentCount
+              - creatorCount
+              - dominantPlatform
+              - engagementPremiumPct
+              - narrativeId
+              - narrativeLabel
+              - opportunity
+              - opportunityScore
+              - platformConcentration
+              - platformDistribution
+            type: object
+          type: array
+        query:
+          type: string
+        tagCombinations:
+          items:
+            additionalProperties: false
+            properties:
+              avgEngagementA:
+                type: number
+              avgEngagementB:
+                type: number
+              avgEngagementTogether:
+                type: number
+              combination:
+                type: string
+              combinationLiftPct:
+                type: number
+              cooccurrence:
+                type: number
+              tagA:
+                type: string
+              tagB:
+                type: string
+            required:
+              - avgEngagementA
+              - avgEngagementB
+              - avgEngagementTogether
+              - combination
+              - combinationLiftPct
+              - cooccurrence
+              - tagA
+              - tagB
+            type: object
+          type: array
+        tagGraph:
+          additionalProperties: false
+          properties:
+            edges:
+              items:
+                additionalProperties: false
+                properties:
+                  source:
+                    type: string
+                  target:
+                    type: string
+                  type:
+                    enum:
+                      - contains
+                      - creator_posted
+                      - semantic_similarity
+                      - tag_overlap
+                      - tagged_with
+                    type: string
+                  weight:
+                    type: number
+                required:
+                  - source
+                  - target
+                  - type
+                  - weight
+                type: object
+              type: array
+            nodes:
+              items:
+                additionalProperties: false
+                properties:
+                  creatorId:
+                    type: number
+                  id:
+                    type: string
+                  label:
+                    type: string
+                  score:
+                    type: number
+                  type:
+                    enum:
+                      - content
+                      - creator
+                      - narrative
+                      - tag
+                    type: string
+                required:
+                  - id
+                  - label
+                  - type
+                type: object
+              type: array
+          required:
+            - edges
+            - nodes
+          type: object
+        tagInsights:
+          items:
+            type: string
+          type: array
+        tagNarrativeMap:
+          items:
+            additionalProperties: false
+            properties:
+              avgEngagement:
+                type: number
+              dominantNarrativeId:
+                type: string
+              dominantNarrativeLabel:
+                type: string
+              engagementPremiumPct:
+                type: number
+              exclusivity:
+                type: number
+              frequency:
+                type: number
+              platformCount:
+                type: number
+              role:
+                enum:
+                  - Bridge
+                  - Shared
+                  - Signature
+                type: string
+              tag:
+                type: string
+            required:
+              - avgEngagement
+              - dominantNarrativeId
+              - dominantNarrativeLabel
+              - engagementPremiumPct
+              - exclusivity
+              - frequency
+              - platformCount
+              - role
+              - tag
+            type: object
+          type: array
+        tagSignals:
+          items:
+            additionalProperties: false
+            properties:
+              avgEngagement:
+                type: number
+              baselineEngagement:
+                type: number
+              count:
+                type: number
+              dominantPlatform:
+                type: string
+              engagementPremiumPct:
+                type: number
+              opportunityScore:
+                type: number
+              platformConcentration:
+                type: number
+              platformDistribution:
+                type: object
+                additionalProperties:
+                  type: number
+              saturation:
+                type: number
+                nullable: true
+              saturationCoverage:
+                type: number
+              tag:
+                type: string
+              whitespaceScore:
+                type: number
+                nullable: true
+            required:
+              - avgEngagement
+              - baselineEngagement
+              - count
+              - dominantPlatform
+              - engagementPremiumPct
+              - opportunityScore
+              - platformConcentration
+              - platformDistribution
+              - saturation
+              - saturationCoverage
+              - tag
+              - whitespaceScore
+            type: object
+          type: array
+        themeSignals:
+          additionalProperties: false
+          properties:
+            available:
+              type: boolean
+            coverage:
+              type: number
+            coverageFloor:
+              type: number
+            coveredCount:
+              type: number
+            signals:
+              items:
+                additionalProperties: false
+                properties:
+                  avgEngagement:
+                    type: number
+                  baselineEngagement:
+                    type: number
+                  count:
+                    type: number
+                  dominantPlatform:
+                    type: string
+                  engagementPremiumPct:
+                    type: number
+                  opportunityScore:
+                    type: number
+                  platformConcentration:
+                    type: number
+                  platformDistribution:
+                    type: object
+                    additionalProperties:
+                      type: number
+                  saturation:
+                    type: number
+                    nullable: true
+                  saturationCoverage:
+                    type: number
+                  theme:
+                    type: string
+                  whitespaceScore:
+                    type: number
+                    nullable: true
+                required:
+                  - avgEngagement
+                  - baselineEngagement
+                  - count
+                  - dominantPlatform
+                  - engagementPremiumPct
+                  - opportunityScore
+                  - platformConcentration
+                  - platformDistribution
+                  - saturation
+                  - saturationCoverage
+                  - theme
+                  - whitespaceScore
+                type: object
+              type: array
+          required:
+            - available
+            - coverage
+            - coverageFloor
+            - coveredCount
+            - signals
+          type: object
+        topTags:
+          items:
+            additionalProperties: false
+            properties:
+              avgEngagement:
+                type: number
+              engagementPremiumPct:
+                type: number
+              frequency:
+                type: number
+              momentumScore:
+                type: number
+              platformCount:
+                type: number
+              signalClass:
+                type: string
+              tag:
+                type: string
+            required:
+              - avgEngagement
+              - engagementPremiumPct
+              - frequency
+              - momentumScore
+              - platformCount
+              - signalClass
+              - tag
+            type: object
+          type: array
+        type:
+          enum:
+            - kinetk.query_intelligence.insights.v1
+          type: string
+        window:
+          $ref: "#/components/schemas/NarrativeWindow"
+      required:
+        - attributeLifts
+        - content
+        - contentGraph
+        - creatorGraph
+        - creators
+        - generatedAt
+        - graph
+        - narrativeGraph
+        - narrativeSaturation
+        - narrativeSentiment
+        - narratives
+        - platformOpportunities
+        - query
+        - tagCombinations
+        - tagGraph
+        - tagNarrativeMap
+        - tagSignals
+        - themeSignals
+        - topTags
+        - type
+        - window
+      type: object
     IInsufficientCreditsResponse:
       additionalProperties: false
       properties:
@@ -1060,16 +1575,511 @@ components:
         - tier
         - window
       type: object
-    IIntelligenceRecordsJobResult:
+    IJobStatusResponse:
+      additionalProperties: false
+      properties:
+        completedAt:
+          type: number
+        error:
+          type: string
+        jobId:
+          type: string
+        kind:
+          $ref: "#/components/schemas/JobKind"
+        result:
+          anyOf:
+            - $ref: "#/components/schemas/IRecordsJobResult"
+            - $ref: "#/components/schemas/IInsightsJobResult"
+        resultBytes:
+          description: Size of the stored result in bytes (present alongside resultUrl).
+          type: number
+        resultExpiresAt:
+          description: ISO-8601 expiry of resultUrl (clamped to the job's own retention).
+          type: string
+        resultStorage:
+          enum:
+            - s3
+          description: >-
+            Set to "s3" when the result was too large to return inline; in that
+            case
+
+            `result` is omitted and `resultUrl` holds a short-lived presigned download
+
+            URL instead. Fetch the URL directly; re-poll for a fresh one after it
+
+            expires (see resultExpiresAt).
+          type: string
+        resultUrl:
+          description: Short-lived presigned GET URL for a large result (present iff
+            resultStorage === "s3").
+          type: string
+        startedAt:
+          type: number
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        submittedAt:
+          type: number
+      required:
+        - jobId
+        - kind
+        - status
+        - submittedAt
+      type: object
+    IJobSubmitResponse:
+      additionalProperties: false
+      properties:
+        dedup:
+          type: boolean
+        fromCache:
+          type: boolean
+        jobId:
+          type: string
+        result:
+          anyOf:
+            - $ref: "#/components/schemas/IRecordsJobResult"
+            - $ref: "#/components/schemas/IInsightsJobResult"
+        resultBytes:
+          description: Size of the stored result in bytes (present alongside resultUrl).
+          type: number
+        resultExpiresAt:
+          description: ISO-8601 expiry of resultUrl (clamped to the job's own retention).
+          type: string
+        resultStorage:
+          enum:
+            - s3
+          description: >-
+            Set to "s3" when the result was too large to return inline; in that
+            case
+
+            `result` is omitted and `resultUrl` holds a short-lived presigned download
+
+            URL instead. Fetch the URL directly; re-poll for a fresh one after it
+
+            expires (see resultExpiresAt).
+          type: string
+        resultUrl:
+          description: Short-lived presigned GET URL for a large result (present iff
+            resultStorage === "s3").
+          type: string
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        statusUrl:
+          type: string
+      required:
+        - jobId
+        - status
+      type: object
+    INarrativeContentItem:
+      additionalProperties: false
+      properties:
+        comment_count:
+          type: number
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        is_representative:
+          type: boolean
+        like_count:
+          type: number
+          nullable: true
+        platform:
+          type: string
+        published_at:
+          type: string
+          nullable: true
+        relevance_score:
+          type: number
+        share_count:
+          type: number
+          nullable: true
+        tags:
+          items:
+            type: string
+          type: array
+        title:
+          type: string
+          nullable: true
+        uuid:
+          type: string
+        view_count:
+          type: number
+          nullable: true
+      required:
+        - is_representative
+        - platform
+        - relevance_score
+        - tags
+        - uuid
+      type: object
+    INarrativeCreatorMetric:
+      additionalProperties: false
+      properties:
+        amplifier_score:
+          type: number
+        content_count:
+          type: number
+        first_seen_at:
+          type: string
+        follower_count:
+          type: number
+          nullable: true
+        id:
+          type: string
+        platform:
+          type: string
+        total_engagement:
+          type: string
+      required:
+        - amplifier_score
+        - content_count
+        - first_seen_at
+        - id
+        - platform
+        - total_engagement
+      type: object
+    INarrativeDetailResponse:
+      additionalProperties: false
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/INarrativeContentItem"
+          type: array
+        creators:
+          items:
+            $ref: "#/components/schemas/INarrativeCreatorMetric"
+          type: array
+        duplicateGroups:
+          items:
+            $ref: "#/components/schemas/INarrativeDuplicateGroup"
+          type: array
+        narrative:
+          $ref: "#/components/schemas/INarrativeSummary"
+        platformBreakdown:
+          items:
+            $ref: "#/components/schemas/INarrativePlatformBreakdown"
+          type: array
+      required:
+        - content
+        - creators
+        - duplicateGroups
+        - narrative
+        - platformBreakdown
+      type: object
+    INarrativeDuplicateGroup:
+      additionalProperties: false
+      properties:
+        canonical_content_uuid:
+          type: string
+        confidence:
+          type: number
+        id:
+          type: string
+        members:
+          items:
+            type: string
+          type: array
+      required:
+        - canonical_content_uuid
+        - confidence
+        - id
+        - members
+      type: object
+    INarrativePlatformBreakdown:
+      additionalProperties: false
+      properties:
+        content_count:
+          type: number
+        platform:
+          type: string
+        total_engagement:
+          type: string
+      required:
+        - content_count
+        - platform
+        - total_engagement
+      type: object
+    INarrativeScoreBreakdown:
+      additionalProperties: false
+      properties:
+        clustering_method:
+          type: string
+        content_count:
+          type: number
+        creator_count:
+          type: number
+        pair_count:
+          type: number
+        platform_count:
+          type: number
+        seed_tag:
+          type: string
+        total_engagement:
+          type: number
+      required:
+        - content_count
+        - creator_count
+        - platform_count
+        - total_engagement
+      type: object
+    INarrativeSearchResponse:
+      additionalProperties: false
+      properties:
+        narratives:
+          items:
+            $ref: "#/components/schemas/INarrativeSummary"
+          type: array
+        query:
+          type: string
+        window:
+          enum:
+            - 30d
+            - 7d
+          type: string
+      required:
+        - narratives
+        - query
+        - window
+      type: object
+    INarrativeSentimentBreakdown:
+      additionalProperties: false
+      properties:
+        coverage:
+          type: number
+        dominant_tone:
+          type: string
+          nullable: true
+        stance:
+          additionalProperties: false
+          properties:
+            critical:
+              type: number
+            mixed:
+              type: number
+            neutral:
+              type: number
+            supportive:
+              type: number
+          required:
+            - critical
+            - mixed
+            - neutral
+            - supportive
+          type: object
+          nullable: true
+        stance_coverage:
+          type: number
+      type: object
+    INarrativeSummary:
+      additionalProperties: false
+      properties:
+        acceleration:
+          type: number
+          nullable: true
+        computed_at:
+          type: string
+        content_count:
+          type: number
+        creator_count:
+          type: number
+        diffusion:
+          type: number
+          nullable: true
+        emerging_score:
+          type: number
+        id:
+          type: string
+        label:
+          type: string
+        lifecycle:
+          type: string
+          nullable: true
+        momentum_score:
+          type: number
+        narrative_key:
+          type: string
+          nullable: true
+        overlap_count:
+          type: number
+        platform_count:
+          type: number
+        representative_content_uuid:
+          type: string
+          nullable: true
+        score_breakdown:
+          $ref: "#/components/schemas/INarrativeScoreBreakdown"
+        sentiment_breakdown:
+          $ref: "#/components/schemas/INarrativeSentimentBreakdown"
+          nullable: true
+        sentiment_label:
+          type: string
+          nullable: true
+        sentiment_score:
+          type: number
+          nullable: true
+        summary:
+          type: string
+        text_rank:
+          type: number
+        top_tags:
+          items:
+            type: string
+          type: array
+        total_engagement:
+          type: string
+        trajectory_confidence:
+          type: string
+          nullable: true
+        velocity:
+          type: number
+          nullable: true
+        window_end:
+          type: string
+        window_key:
+          enum:
+            - 30d
+            - 7d
+          type: string
+        window_start:
+          type: string
+      required:
+        - computed_at
+        - content_count
+        - creator_count
+        - emerging_score
+        - id
+        - label
+        - momentum_score
+        - platform_count
+        - score_breakdown
+        - summary
+        - top_tags
+        - total_engagement
+        - window_end
+        - window_key
+        - window_start
+      type: object
+    INarrativeTrajectoryPoint:
+      additionalProperties: false
+      properties:
+        acceleration:
+          type: number
+          nullable: true
+        computed_at:
+          type: string
+        content_count:
+          type: number
+        creator_count:
+          type: number
+        diffusion:
+          type: number
+          nullable: true
+        emerging_score:
+          type: number
+        label:
+          type: string
+        lifecycle:
+          type: string
+          nullable: true
+        momentum_score:
+          type: number
+        platform_count:
+          type: number
+        sentiment_breakdown:
+          $ref: "#/components/schemas/INarrativeSentimentBreakdown"
+          nullable: true
+        top_tags:
+          items:
+            type: string
+          type: array
+        total_engagement:
+          type: string
+        velocity:
+          type: number
+          nullable: true
+      required:
+        - computed_at
+        - content_count
+        - creator_count
+        - emerging_score
+        - label
+        - momentum_score
+        - platform_count
+        - top_tags
+        - total_engagement
+      type: object
+    INarrativeTrajectoryResponse:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        narrativeKey:
+          type: string
+          nullable: true
+        trajectory:
+          items:
+            $ref: "#/components/schemas/INarrativeTrajectoryPoint"
+          type: array
+        window:
+          enum:
+            - 30d
+            - 7d
+          type: string
+      required:
+        - id
+        - narrativeKey
+        - trajectory
+        - window
+      type: object
+    IQueryIntelligenceInput:
+      additionalProperties: false
+      properties:
+        includeSignals:
+          description: Include the LLM insight prose arrays in the result (for insights).
+          type: boolean
+        limit:
+          type: number
+        platforms:
+          description: Platforms to filter by. Case-insensitive.
+          items:
+            enum:
+              - instagram
+              - pinterest
+              - reddit
+              - snapchat
+              - tiktok
+              - x
+            type: string
+          type: array
+        query:
+          type: string
+        window:
+          $ref: "#/components/schemas/PublicJobWindow"
+      required:
+        - limit
+        - query
+        - window
+      type: object
+    IQueryJobSubmitBody:
+      additionalProperties: false
+      properties:
+        input:
+          $ref: "#/components/schemas/IQueryIntelligenceInput"
+        kind:
+          enum:
+            - insights
+            - records
+          type: string
+      required:
+        - input
+        - kind
+      type: object
+    IRecordsJobResult:
       additionalProperties: false
       properties:
         content:
           items:
             $ref: "#/components/schemas/PublicRankedContent"
-          type: array
-        expandedQueries:
-          items:
-            type: string
           type: array
         generatedAt:
           type: string
@@ -1132,206 +2142,12 @@ components:
           type: object
         query:
           type: string
-        retrieval:
-          additionalProperties: false
-          properties:
-            candidatesSeen:
-              type: number
-            filteredBreakdown:
-              additionalProperties: false
-              properties:
-                canonical:
-                  type: number
-                platform:
-                  type: number
-                window:
-                  type: number
-              required:
-                - canonical
-                - platform
-                - window
-              type: object
-            filteredCandidates:
-              type: number
-            identityMatchedCandidates:
-              type: number
-            joinBreakdown:
-              additionalProperties: false
-              properties:
-                contentPlatformId:
-                  type: number
-                uuid:
-                  type: number
-                weaviateId:
-                  type: number
-              required:
-                - contentPlatformId
-                - uuid
-                - weaviateId
-              type: object
-            joinedResults:
-              type: number
-            matchedCandidates:
-              type: number
-            mergeMethod:
-              enum:
-                - reciprocal_rank_fusion
-              type: string
-            resultsReturned:
-              type: number
-            tagWidening:
-              additionalProperties: false
-              properties:
-                phaseAContentCount:
-                  type: number
-                skipped:
-                  type: boolean
-                source:
-                  enum:
-                    - none
-                    - phase_a_top_tags
-                    - query_hashtags
-                  type: string
-                widenTags:
-                  items:
-                    type: string
-                  type: array
-                widenedCount:
-                  type: number
-              required:
-                - phaseAContentCount
-                - skipped
-                - source
-                - widenTags
-                - widenedCount
-              type: object
-            unmatchedCandidates:
-              type: number
-            unmatchedSamples:
-              items:
-                additionalProperties: false
-                properties:
-                  contentId:
-                    type: string
-                    nullable: true
-                  contentPlatformId:
-                    type: string
-                    nullable: true
-                  distance:
-                    type: number
-                    nullable: true
-                  matchedBy:
-                    enum:
-                      - contentPlatformId
-                      - uuid
-                      - weaviateId
-                    type: string
-                    nullable: true
-                  mediaType:
-                    type: string
-                    nullable: true
-                  platform:
-                    type: string
-                    nullable: true
-                  postgresCanonicalUuid:
-                    type: string
-                    nullable: true
-                  postgresPlatform:
-                    type: string
-                    nullable: true
-                  postgresPublishedAt:
-                    type: string
-                    nullable: true
-                  postgresUuid:
-                    type: string
-                    nullable: true
-                  rawSimilarity:
-                    type: number
-                  reason:
-                    enum:
-                      - no_postgres_identity_match
-                      - postgres_row_filtered_canonical
-                      - postgres_row_filtered_platform
-                      - postgres_row_filtered_window
-                    type: string
-                  rrfScore:
-                    type: number
-                  sourceUrl:
-                    type: string
-                    nullable: true
-                  weaviateObjectId:
-                    type: string
-                    nullable: true
-                required:
-                  - contentId
-                  - contentPlatformId
-                  - distance
-                  - matchedBy
-                  - mediaType
-                  - platform
-                  - postgresCanonicalUuid
-                  - postgresPlatform
-                  - postgresPublishedAt
-                  - postgresUuid
-                  - rawSimilarity
-                  - reason
-                  - rrfScore
-                  - sourceUrl
-                  - weaviateObjectId
-                type: object
-              type: array
-            vectorDiagnostics:
-              items:
-                additionalProperties: false
-                properties:
-                  candidatesReturned:
-                    type: number
-                  error:
-                    type: string
-                  query:
-                    type: string
-                  status:
-                    enum:
-                      - failed
-                      - ok
-                    type: string
-                  targetVector:
-                    type: string
-                required:
-                  - candidatesReturned
-                  - query
-                  - status
-                  - targetVector
-                type: object
-              type: array
-            vectorTargets:
-              items:
-                type: string
-              type: array
-          required:
-            - candidatesSeen
-            - filteredBreakdown
-            - filteredCandidates
-            - identityMatchedCandidates
-            - joinBreakdown
-            - joinedResults
-            - matchedCandidates
-            - mergeMethod
-            - resultsReturned
-            - unmatchedCandidates
-            - vectorDiagnostics
-            - vectorTargets
-          type: object
         type:
           enum:
-            - kinetk.query_intelligence.search.v1
+            - kinetk.query_intelligence.record.v1
           type: string
         window:
-          enum:
-            - 30d
-            - 7d
-            - all
-          type: string
+          $ref: "#/components/schemas/NarrativeWindow"
       required:
         - content
         - generatedAt
@@ -1340,672 +2156,21 @@ components:
         - type
         - window
       type: object
-    IIntelligenceSignalsJobResult:
+    ITrendingResponse:
       additionalProperties: false
       properties:
-        generatedAt:
-          type: string
-          nullable: true
-        insights:
+        narratives:
           items:
-            type: string
+            $ref: "#/components/schemas/INarrativeSummary"
           type: array
-        narrativeInsights:
-          items:
-            type: string
-          type: array
-        query:
-          type: string
-          nullable: true
-        tagInsights:
-          items:
-            type: string
-          type: array
-        type:
-          type: string
         window:
+          enum:
+            - 30d
+            - 7d
           type: string
-          nullable: true
       required:
-        - generatedAt
-        - insights
-        - narrativeInsights
-        - query
-        - tagInsights
-        - type
+        - narratives
         - window
-      type: object
-    IJobStatusResponse:
-      additionalProperties: false
-      properties:
-        completedAt:
-          type: number
-        error:
-          type: string
-        jobId:
-          type: string
-        kind:
-          $ref: "#/components/schemas/JobKind"
-        result:
-          anyOf:
-            - $ref: "#/components/schemas/IIntelligenceRecordsJobResult"
-            - $ref: "#/components/schemas/IIntelligenceSignalsJobResult"
-            - $ref: "#/components/schemas/ICampaignBriefJobResult"
-            - $ref: "#/components/schemas/ILlmContextJobResult"
-        resultBytes:
-          description: Size of the stored result in bytes (present alongside resultUrl).
-          type: number
-        resultExpiresAt:
-          description: ISO-8601 expiry of resultUrl (clamped to the job's own retention).
-          type: string
-        resultStorage:
-          enum:
-            - s3
-          description: >-
-            Set to "s3" when the result was too large to return inline; in that
-            case
-
-            `result` is omitted and `resultUrl` holds a short-lived presigned download
-
-            URL instead. Fetch the URL directly; re-poll for a fresh one after it
-
-            expires (see resultExpiresAt).
-          type: string
-        resultUrl:
-          description: Short-lived presigned GET URL for a large result (present iff
-            resultStorage === "s3").
-          type: string
-        startedAt:
-          type: number
-        status:
-          $ref: "#/components/schemas/JobStatus"
-        submittedAt:
-          type: number
-      required:
-        - jobId
-        - kind
-        - status
-        - submittedAt
-      type: object
-    IJobSubmitResponse:
-      additionalProperties: false
-      properties:
-        dedup:
-          type: boolean
-        fromCache:
-          type: boolean
-        jobId:
-          type: string
-        result:
-          anyOf:
-            - $ref: "#/components/schemas/IIntelligenceRecordsJobResult"
-            - $ref: "#/components/schemas/IIntelligenceSignalsJobResult"
-            - $ref: "#/components/schemas/ICampaignBriefJobResult"
-            - $ref: "#/components/schemas/ILlmContextJobResult"
-        resultBytes:
-          description: Size of the stored result in bytes (present alongside resultUrl).
-          type: number
-        resultExpiresAt:
-          description: ISO-8601 expiry of resultUrl (clamped to the job's own retention).
-          type: string
-        resultStorage:
-          enum:
-            - s3
-          description: >-
-            Set to "s3" when the result was too large to return inline; in that
-            case
-
-            `result` is omitted and `resultUrl` holds a short-lived presigned download
-
-            URL instead. Fetch the URL directly; re-poll for a fresh one after it
-
-            expires (see resultExpiresAt).
-          type: string
-        resultUrl:
-          description: Short-lived presigned GET URL for a large result (present iff
-            resultStorage === "s3").
-          type: string
-        status:
-          $ref: "#/components/schemas/JobStatus"
-        statusUrl:
-          type: string
-      required:
-        - jobId
-        - status
-      type: object
-    ILlmContextJobResult:
-      additionalProperties: false
-      properties:
-        context:
-          additionalProperties: false
-          properties:
-            campaign:
-              type: string
-            creators:
-              items:
-                additionalProperties: false
-                properties:
-                  amplifier_score:
-                    type: number
-                  content_count:
-                    type: number
-                  follower_count:
-                    type: number
-                    nullable: true
-                  id:
-                    type: number
-                  platform:
-                    type: string
-                  total_engagement:
-                    type: number
-                required:
-                  - amplifier_score
-                  - content_count
-                  - id
-                  - platform
-                  - total_engagement
-                type: object
-              type: array
-            graph:
-              additionalProperties: false
-              properties:
-                edges:
-                  items:
-                    additionalProperties: false
-                    properties:
-                      source:
-                        type: string
-                      target:
-                        type: string
-                      type:
-                        enum:
-                          - contains
-                          - creator_posted
-                          - semantic_similarity
-                          - tag_overlap
-                          - tagged_with
-                        type: string
-                      weight:
-                        type: number
-                    required:
-                      - source
-                      - target
-                      - type
-                      - weight
-                    type: object
-                  type: array
-                nodes:
-                  items:
-                    additionalProperties: false
-                    properties:
-                      creatorId:
-                        type: number
-                      id:
-                        type: string
-                      label:
-                        type: string
-                      score:
-                        type: number
-                      type:
-                        enum:
-                          - content
-                          - creator
-                          - narrative
-                          - tag
-                        type: string
-                    required:
-                      - id
-                      - label
-                      - type
-                    type: object
-                  type: array
-              required:
-                - edges
-                - nodes
-              type: object
-            input:
-              additionalProperties: false
-              properties:
-                campaign:
-                  type: string
-                platforms:
-                  items:
-                    type: string
-                  type: array
-                tone:
-                  default: specific, evidence-backed
-                  type: string
-                window:
-                  $ref: "#/components/schemas/NarrativeWindow"
-              required:
-                - campaign
-                - platforms
-                - tone
-                - window
-              type: object
-            narratives:
-              items:
-                additionalProperties: false
-                properties:
-                  content_count:
-                    type: number
-                  creator_count:
-                    type: number
-                  emerging_score:
-                    type: number
-                  id:
-                    type: string
-                  label:
-                    type: string
-                  momentum_score:
-                    type: number
-                  platform_count:
-                    type: number
-                  score_breakdown:
-                    additionalProperties: false
-                    properties:
-                      creatorDiversity:
-                        type: number
-                      engagementStrength:
-                        type: number
-                      platformSpread:
-                        type: number
-                      recencyStrength:
-                        type: number
-                    required:
-                      - creatorDiversity
-                      - engagementStrength
-                      - platformSpread
-                      - recencyStrength
-                    type: object
-                  summary:
-                    type: string
-                  top_tags:
-                    items:
-                      type: string
-                    type: array
-                  total_engagement:
-                    type: number
-                required:
-                  - content_count
-                  - creator_count
-                  - emerging_score
-                  - id
-                  - label
-                  - momentum_score
-                  - platform_count
-                  - score_breakdown
-                  - summary
-                  - top_tags
-                  - total_engagement
-                type: object
-              type: array
-            platformOpportunities:
-              items:
-                additionalProperties: false
-                properties:
-                  avgEngagement:
-                    type: number
-                  baselineEngagement:
-                    type: number
-                  contentCount:
-                    type: number
-                  creatorCount:
-                    type: number
-                  dominantPlatform:
-                    type: string
-                  engagementPremiumPct:
-                    type: number
-                  narrativeId:
-                    type: string
-                  narrativeLabel:
-                    type: string
-                  opportunity:
-                    type: string
-                  opportunityScore:
-                    type: number
-                  platformConcentration:
-                    type: number
-                  platformDistribution:
-                    $ref: "#/components/schemas/Record<string,number>"
-                required:
-                  - avgEngagement
-                  - baselineEngagement
-                  - contentCount
-                  - creatorCount
-                  - dominantPlatform
-                  - engagementPremiumPct
-                  - narrativeId
-                  - narrativeLabel
-                  - opportunity
-                  - opportunityScore
-                  - platformConcentration
-                  - platformDistribution
-                type: object
-              type: array
-            representativeContent:
-              items:
-                additionalProperties: false
-                properties:
-                  comment_count:
-                    type: number
-                  description:
-                    type: string
-                    nullable: true
-                  like_count:
-                    type: number
-                  platform:
-                    type: string
-                    nullable: true
-                  share_count:
-                    type: number
-                  tags:
-                    items:
-                      type: string
-                    type: array
-                  title:
-                    type: string
-                    nullable: true
-                  uuid:
-                    type: string
-                  view_count:
-                    type: number
-                required:
-                  - comment_count
-                  - like_count
-                  - share_count
-                  - tags
-                  - uuid
-                  - view_count
-                type: object
-              type: array
-            retrieval:
-              additionalProperties: false
-              properties:
-                candidatesSeen:
-                  type: number
-                filteredBreakdown:
-                  additionalProperties: false
-                  properties:
-                    canonical:
-                      type: number
-                    platform:
-                      type: number
-                    window:
-                      type: number
-                  required:
-                    - canonical
-                    - platform
-                    - window
-                  type: object
-                filteredCandidates:
-                  type: number
-                identityMatchedCandidates:
-                  type: number
-                joinBreakdown:
-                  additionalProperties: false
-                  properties:
-                    contentPlatformId:
-                      type: number
-                    uuid:
-                      type: number
-                    weaviateId:
-                      type: number
-                  required:
-                    - contentPlatformId
-                    - uuid
-                    - weaviateId
-                  type: object
-                joinedResults:
-                  type: number
-                matchedCandidates:
-                  type: number
-                mergeMethod:
-                  enum:
-                    - reciprocal_rank_fusion
-                  type: string
-                resultsReturned:
-                  type: number
-                tagWidening:
-                  additionalProperties: false
-                  properties:
-                    phaseAContentCount:
-                      type: number
-                    skipped:
-                      type: boolean
-                    source:
-                      enum:
-                        - none
-                        - phase_a_top_tags
-                        - query_hashtags
-                      type: string
-                    widenTags:
-                      items:
-                        type: string
-                      type: array
-                    widenedCount:
-                      type: number
-                  required:
-                    - phaseAContentCount
-                    - skipped
-                    - source
-                    - widenTags
-                    - widenedCount
-                  type: object
-                unmatchedCandidates:
-                  type: number
-                unmatchedSamples:
-                  items:
-                    additionalProperties: false
-                    properties:
-                      contentId:
-                        type: string
-                        nullable: true
-                      contentPlatformId:
-                        type: string
-                        nullable: true
-                      distance:
-                        type: number
-                        nullable: true
-                      matchedBy:
-                        enum:
-                          - contentPlatformId
-                          - uuid
-                          - weaviateId
-                        type: string
-                        nullable: true
-                      mediaType:
-                        type: string
-                        nullable: true
-                      platform:
-                        type: string
-                        nullable: true
-                      postgresCanonicalUuid:
-                        type: string
-                        nullable: true
-                      postgresPlatform:
-                        type: string
-                        nullable: true
-                      postgresPublishedAt:
-                        type: string
-                        nullable: true
-                      postgresUuid:
-                        type: string
-                        nullable: true
-                      rawSimilarity:
-                        type: number
-                      reason:
-                        enum:
-                          - no_postgres_identity_match
-                          - postgres_row_filtered_canonical
-                          - postgres_row_filtered_platform
-                          - postgres_row_filtered_window
-                        type: string
-                      rrfScore:
-                        type: number
-                      sourceUrl:
-                        type: string
-                        nullable: true
-                      weaviateObjectId:
-                        type: string
-                        nullable: true
-                    required:
-                      - contentId
-                      - contentPlatformId
-                      - distance
-                      - matchedBy
-                      - mediaType
-                      - platform
-                      - postgresCanonicalUuid
-                      - postgresPlatform
-                      - postgresPublishedAt
-                      - postgresUuid
-                      - rawSimilarity
-                      - reason
-                      - rrfScore
-                      - sourceUrl
-                      - weaviateObjectId
-                    type: object
-                  type: array
-                vectorDiagnostics:
-                  items:
-                    additionalProperties: false
-                    properties:
-                      candidatesReturned:
-                        type: number
-                      error:
-                        type: string
-                      query:
-                        type: string
-                      status:
-                        enum:
-                          - failed
-                          - ok
-                        type: string
-                      targetVector:
-                        type: string
-                    required:
-                      - candidatesReturned
-                      - query
-                      - status
-                      - targetVector
-                    type: object
-                  type: array
-                vectorTargets:
-                  items:
-                    type: string
-                  type: array
-              required:
-                - candidatesSeen
-                - filteredBreakdown
-                - filteredCandidates
-                - identityMatchedCandidates
-                - joinBreakdown
-                - joinedResults
-                - matchedCandidates
-                - mergeMethod
-                - resultsReturned
-                - unmatchedCandidates
-                - vectorDiagnostics
-                - vectorTargets
-              type: object
-            sourceContentUuids:
-              items:
-                type: string
-              type: array
-            sourceNarrativeIds:
-              items:
-                type: string
-              type: array
-            topTags:
-              items:
-                type: string
-              type: array
-          required:
-            - campaign
-            - creators
-            - graph
-            - input
-            - narratives
-            - platformOpportunities
-            - representativeContent
-            - sourceContentUuids
-            - sourceNarrativeIds
-            - topTags
-          type: object
-        generatedAt:
-          type: string
-        recordCount:
-          type: number
-        type:
-          enum:
-            - kinetk.campaign_context.v1
-          type: string
-      required:
-        - context
-        - generatedAt
-        - recordCount
-        - type
-      type: object
-    IQueryIntelligenceInput:
-      additionalProperties: false
-      properties:
-        limit:
-          type: number
-        platforms:
-          description: Platforms to filter by. Case-insensitive.
-          items:
-            enum:
-              - instagram
-              - pinterest
-              - reddit
-              - snapchat
-              - tiktok
-              - x
-            type: string
-          type: array
-        query:
-          type: string
-        window:
-          $ref: "#/components/schemas/PublicJobWindow"
-      required:
-        - limit
-        - query
-        - window
-      type: object
-    IQueryJobSubmitBody:
-      additionalProperties: false
-      properties:
-        input:
-          $ref: "#/components/schemas/IQueryIntelligenceInput"
-        kind:
-          enum:
-            - intelligence_records
-          type: string
-      required:
-        - input
-        - kind
-      type: object
-    ISignalsJobInput:
-      additionalProperties: false
-      properties:
-        query:
-          type: string
-      required:
-        - query
-      type: object
-    ISignalsJobSubmitBody:
-      additionalProperties: false
-      properties:
-        input:
-          $ref: "#/components/schemas/ISignalsJobInput"
-        kind:
-          enum:
-            - intelligence_signals
-          type: string
-      required:
-        - input
-        - kind
       type: object
     IUsageEntry:
       additionalProperties: false
@@ -2020,10 +2185,9 @@ components:
           type: string
         kind:
           enum:
-            - campaign_brief
-            - intelligence_records
-            - intelligence_signals
-            - llm_context
+            # - campaign
+            - insights
+            - records
           type: string
         occurredAt:
           type: string
@@ -2072,10 +2236,9 @@ components:
       type: object
     JobKind:
       enum:
-        - campaign_brief
-        - intelligence_records
-        - intelligence_signals
-        - llm_context
+        # - campaign
+        - insights
+        - records
       type: string
     JobStatus:
       enum:
@@ -2090,6 +2253,66 @@ components:
         - 7d
         - all
       type: string
+    PublicEnrichment:
+      additionalProperties: false
+      properties:
+        aestheticStyle:
+          items:
+            type: string
+          type: array
+        attributeConfidence:
+          type: number
+          nullable: true
+        brandProducts:
+          items:
+            type: string
+          type: array
+        coverage:
+          additionalProperties: false
+          properties:
+            attributes:
+              type: boolean
+            novelty:
+              type: boolean
+            sentiment:
+              type: boolean
+          required:
+            - attributes
+            - novelty
+            - sentiment
+          type: object
+        emotionMood:
+          items:
+            type: string
+          type: array
+        noveltyScore:
+          type: number
+          nullable: true
+        saturationScore:
+          type: number
+          nullable: true
+        themes:
+          items:
+            type: string
+          type: array
+        tone:
+          type: string
+          nullable: true
+        toneConfidence:
+          type: number
+          nullable: true
+      required:
+        - aestheticStyle
+        - attributeConfidence
+        - brandProducts
+        - coverage
+        - emotionMood
+        - noveltyScore
+        - saturationScore
+        - themes
+        - tone
+        - toneConfidence
+      type: object
     PublicJobWindow:
       enum:
         - 30d
@@ -2116,6 +2339,8 @@ components:
           type: number
         engagementScore:
           type: number
+        enrichment:
+          $ref: "#/components/schemas/PublicEnrichment"
         exampleRankingScore:
           type: number
         followerCount:
@@ -2172,9 +2397,6 @@ components:
         - tags
         - uuid
         - viewCount
-      type: object
-    "Record<string,number>":
-      additionalProperties: false
       type: object
   headers:
     CreditsUsed:

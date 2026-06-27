@@ -37,6 +37,8 @@ navigation:
         contents:
           - page: Overview
             path: ./pages/mcp/overview.mdx
+          - page: Hosted MCP
+            path: ./pages/mcp/hosted-mcp.mdx
           - page: Installation
             path: ./pages/mcp/installation.mdx
           - page: Tools

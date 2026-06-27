@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/* ── KINETK brand tokens (borrowed from the main site's design language) ── */
+@theme inline {
+  --color-kinetk-cyan: var(--kinetk-cyan);
+  --color-kinetk-teal: var(--kinetk-teal);
+  --color-kinetk-amber: var(--kinetk-amber);
+  --color-kinetk-yellow: var(--kinetk-yellow);
+
+  --font-bebasNeue: var(--font-bebasNeue), "Bebas Neue", sans-serif;
+  --font-inter: var(--font-inter), "Inter", sans-serif;
+  --font-spaceGrotesk: var(--font-spaceGrotesk), "Space Grotesk", sans-serif;
+  --font-mono: var(--font-jetbrainsMono), "JetBrains Mono", ui-monospace, SFMono-Regular,
+    monospace;
+
+  --container-kinetk: 90rem;
+  --breakpoint-xs: 420px;
+}
+
+:root {
+  --background: #000;
+  --foreground: #fff;
+
+  --kinetk-cyan: #00f5ff;
+  --kinetk-teal: #26aec0;
+  --kinetk-amber: #eeb248;
+  --kinetk-yellow: #ffd700;
+}
+
+@layer base {
+  body {
+    /* Full-page KINETK atmosphere — a cyan + teal + gold-hint drift over ink,
+       anchored to the viewport so every section sits in the same field. */
+    background:
+      radial-gradient(ellipse 90% 60% at 85% -10%, rgba(0, 245, 255, 0.22), transparent 60%),
+      radial-gradient(ellipse 80% 60% at 5% 22%, rgba(38, 174, 192, 0.18), transparent 60%),
+      radial-gradient(ellipse 100% 65% at 30% 112%, rgba(255, 215, 0, 0.1), transparent 60%),
+      linear-gradient(180deg, #060a10 0%, #000 55%),
+      var(--background);
+    background-attachment: fixed;
+    color: var(--foreground);
+    font-family: var(--font-inter), "Inter", sans-serif;
+  }
+}
+
+/* ── KINETK gradient library (brand guide §09 · surface & gradients) ──
+   Each gradient has a specific job — they signal moments, never decorate.
+   (The full-page atmosphere lives on `body` above.) */
+
+/* Live-stream strip — cyan = stream, teal = graph. Earns the "real-time" read. */
+.bg-kinetk-stream {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 245, 255, 0.1) 30%,
+    rgba(38, 174, 192, 0.1) 60%,
+    transparent 100%
+  );
+}

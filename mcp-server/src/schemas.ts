@@ -1,17 +1,15 @@
-// Zod schemas for the three MCP tool inputs. Validation runs in the MCP
+// Zod schemas for the two MCP tool inputs. Validation runs in the MCP
 // process before any HTTP call lands at graph-service, so malformed agent
 // input fails fast with a readable error rather than burning a Lambda invoke.
 //
-// `createContextJobInputSchema` is a discriminated union on `kind`: the two
-// retrieval kinds (intelligence_records / intelligence_signals) require
-// `query`; the two campaign kinds (campaign_brief / llm_context) require
-// `campaign`. The per-record-billed kinds (intelligence_records,
-// campaign_brief, llm_context) also require an explicit `limit` — the backend
-// has no default and 400s without one, and we deliberately do NOT default it
-// here: the caller is choosing their spend. Filters and options stay optional.
-// intelligence_signals is special: the backend accepts ONLY `query` for that
-// kind, so the input mapper silently drops filters/options before submit (the
-// tool descriptions say so) rather than letting the backend 400.
+// `createContextJobInputSchema` is a discriminated union on `kind`: BOTH kinds
+// (records / insights, + their aliases) are keyed by `query` AND require an
+// explicit `window` (via filters) + `limit`. The backend has no default and
+// 400s without window/limit, and we deliberately do NOT default limit here: the
+// caller is choosing their spend (records is billed per record). insights ALSO
+// accepts an optional `includeSignals` projection flag — when true the backend
+// additionally requires window:"all" + limit:3000, so we enforce that here (a
+// per-branch refine) rather than letting the backend 400.
 
 import { z } from "zod";
 
@@ -36,14 +34,16 @@ const optionsSchema = z
   .strict()
   .optional();
 
-// Explicit `limit` for the per-record-billed kinds (intelligence_records,
-// campaign_brief, llm_context). Required — never defaulted client-side: jobs
+// Explicit `limit` for both kinds (records and insights). Required — never
+// defaulted client-side: jobs
 // are billed per record, so the caller must state how many records they are
 // buying. The backend accepts up to 10000 for external keys, but the MCP caps
 // at 3000 (MCP_LIMIT_MAX): a reject-not-clamp ceiling that keeps an agent from
 // accidentally buying a huge, slow, expensive pull through a conversational
-// tool call. 3000 is plenty for the context an LLM actually consumes.
-const MCP_LIMIT_MIN = 100;
+// tool call. 3000 is plenty for the context an LLM actually consumes. Note: the
+// includeSignals projection (insights only) requires window:"all" + limit:3000,
+// so with the cap the only valid includeSignals limit is exactly 3000.
+const MCP_LIMIT_MIN = 500;
 export const MCP_LIMIT_MAX = 3000;
 const limitSchema = (kind: string) =>
   z
@@ -55,70 +55,79 @@ const limitSchema = (kind: string) =>
     .min(MCP_LIMIT_MIN, `limit must be at least ${MCP_LIMIT_MIN}`)
     .max(MCP_LIMIT_MAX, `limit must be at most ${MCP_LIMIT_MAX} via this tool — for larger pulls call the graph-service API directly`);
 
-// Retrieval kinds: query is required. Two parallel single-kind schemas so
-// `z.discriminatedUnion("kind", ...)` can use them — discriminatedUnion
-// requires each branch to be a `ZodObject` with a literal discriminator.
-const intelligenceSearchSchema = z
-  .object({
-    kind: z.literal("intelligence_records"),
-    query: z.string().min(1, "query is required for intelligence_records"),
-    limit: limitSchema("intelligence_records"),
-    filters: filtersSchema,
-    options: optionsSchema,
-  })
-  .strict();
+// Each kind has a canonical name (records / insights) PLUS legacy aliases
+// (the old graph_* names and the original intelligence_* names) — the backend
+// accepts the canonical names + intelligence_*, and the MCP additionally accepts
+// graph_* and canonicalizes everything before submit. We build one branch per
+// accepted name (discriminatedUnion needs a literal discriminator per branch)
+// from two shared shapes: records (query+window+limit) and insights (records'
+// shape PLUS the optional includeSignals projection flag). The inputMapper
+// canonicalizes the kind before submit, so downstream only sees the 2 canonical
+// kinds.
+type RecordsKind = "records" | "graph_records" | "intelligence_records";
+type DiscoverKind = "insights" | "graph_discovery" | "intelligence_signals";
 
-const intelligenceDiscoverSchema = z
-  .object({
-    kind: z.literal("intelligence_signals"),
-    query: z.string().min(1, "query is required for intelligence_signals"),
-    filters: filtersSchema,
-    options: optionsSchema,
-  })
-  .strict();
+const recordsBranch = (kind: RecordsKind) =>
+  z
+    .object({
+      kind: z.literal(kind),
+      query: z.string().min(1, `query is required for ${kind}`),
+      limit: limitSchema(kind),
+      filters: filtersSchema,
+      options: optionsSchema,
+    })
+    .strict();
 
-const campaignBriefSchema = z
-  .object({
-    kind: z.literal("campaign_brief"),
-    campaign: z.string().min(1).optional(),
-    audience: z.string().min(1).optional(),
-    tone: z.string().min(1).optional(),
-    limit: limitSchema("campaign_brief"),
-    filters: filtersSchema,
-    options: optionsSchema,
-  })
-  .strict();
+// insights now mirrors records input-wise (query + window + limit) PLUS the
+// includeSignals projection flag. The graph-service public route 400s an
+// insights submit without window/limit, so they are REQUIRED here too. The
+// includeSignals → window:"all" + limit:3000 constraint is enforced at the union
+// level below (z.discriminatedUnion can't take a refined/ZodEffects member).
+const discoverBranch = (kind: DiscoverKind) =>
+  z
+    .object({
+      kind: z.literal(kind),
+      query: z.string().min(1, `query is required for ${kind}`),
+      limit: limitSchema(kind),
+      // A-1 — discovery is structured-by-default; opt into the LLM prose arrays.
+      includeSignals: z.boolean().optional(),
+      filters: filtersSchema,
+      options: optionsSchema,
+    })
+    .strict();
 
-const llmContextSchema = z
-  .object({
-    kind: z.literal("llm_context"),
-    campaign: z.string().min(1).optional(),
-    audience: z.string().min(1).optional(),
-    tone: z.string().min(1).optional(),
-    limit: limitSchema("llm_context"),
-    filters: filtersSchema,
-    options: optionsSchema,
-  })
-  .strict();
-
-// `campaign` is required for the two campaign kinds — graph-service enforces
-// this server-side, but we surface a friendlier message client-side.
+// Both kinds are keyed by `query` and require window + limit, enforced per-branch
+// above. The includeSignals projection (insights only) is the one cross-field rule:
+// it is only valid over the FULL corpus, so graph-service requires window:"all" AND
+// limit:3000 for it. With the MCP's 3000 cap that means limit must be EXACTLY 3000.
+// Enforce here (a union-level superRefine) so the agent gets a fast, readable MCP
+// error instead of a backend 400. Non-includeSignals insights may use any window
+// (7d/30d/all) + any limit 500–3000.
 export const createContextJobInputSchema = z
   .discriminatedUnion("kind", [
-    intelligenceSearchSchema,
-    intelligenceDiscoverSchema,
-    campaignBriefSchema,
-    llmContextSchema,
+    recordsBranch("records"),
+    recordsBranch("graph_records"),
+    recordsBranch("intelligence_records"),
+    discoverBranch("insights"),
+    discoverBranch("graph_discovery"),
+    discoverBranch("intelligence_signals"),
   ])
   .superRefine((value, ctx) => {
-    if (value.kind === "campaign_brief" || value.kind === "llm_context") {
-      if (!value.campaign) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "campaign is required for campaign_brief and llm_context",
-          path: ["campaign"],
-        });
-      }
+    if (!("includeSignals" in value) || value.includeSignals !== true) return;
+    const window = value.filters?.window ?? "all";
+    if (window !== "all") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["filters", "window"],
+        message: `includeSignals requires window:'all' and limit:${MCP_LIMIT_MAX}`,
+      });
+    }
+    if (value.limit !== MCP_LIMIT_MAX) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["limit"],
+        message: `includeSignals requires window:'all' and limit:${MCP_LIMIT_MAX}`,
+      });
     }
   });
 
@@ -149,27 +158,32 @@ export const createContextJobJsonSchema = {
   properties: {
     kind: {
       type: "string",
-      enum: ["intelligence_records", "intelligence_signals", "campaign_brief", "llm_context"],
+      enum: [
+        "records",
+        "insights",
+        "intelligence_records",
+        "intelligence_signals",
+      ],
       description:
-        "What to get back. intelligence_records = the matching content itself, ranked posts/videos (needs `query` + `limit`). intelligence_signals = synthesized insight signals only, no raw content (needs `query` and ONLY `query` — filters/options are server-managed for this kind and silently dropped if sent). campaign_brief = a finished strategy brief we generate + persist (needs `campaign` + `limit`). llm_context = the raw campaign context bundle for YOU to synthesize from, no generated brief — faster/cheaper than campaign_brief (needs `campaign` + `limit`). Rule of thumb: `query` → records (content) or signals (insights); `campaign` → llm_context or campaign_brief.",
+        "What to get back. Both kinds are keyed by `query` and require `window` + `limit`. Prefer the short names records/insights (the graph_*/intelligence_* names are accepted legacy aliases). records (aliases graph_records/intelligence_records) = the matching content itself, ranked posts/videos, each carrying enrichment (themes/tone/novelty) (needs `query` + `window` + `limit`). insights (aliases graph_discovery/intelligence_signals) = synthesized intelligence — narratives with trajectory/lifecycle + sentiment, tag/theme signals, white-space — STRUCTURED by default; set `includeSignals:true` to also get the LLM prose lines (needs `query` + `window` + `limit`; includeSignals additionally requires window:'all' AND limit:3000).",
+    },
+    includeSignals: {
+      type: "boolean",
+      description:
+        "insights (aliases graph_discovery/intelligence_signals) ONLY. Discovery is structured-by-default (narratives + signals, no prose). Set true to ALSO include the LLM-written insight lines (more tokens). When true you MUST set window:'all' and limit:3000 (the prose projection runs over the full corpus). Ignored for records.",
     },
     query: {
       type: "string",
-      description: "Natural-language query. Required for intelligence_records and intelligence_signals.",
-    },
-    campaign: {
-      type: "string",
-      description: "Campaign description (free text). Required for campaign_brief and llm_context.",
+      description:
+        "Natural-language search topic — REQUIRED for both kinds (records and insights).",
     },
     limit: {
       type: "integer",
-      minimum: 100,
+      minimum: 500,
       maximum: 3000,
       description:
-        "REQUIRED for intelligence_records, campaign_brief and llm_context: how many records to retrieve, between 100 and 3000. Jobs are billed per record, so there is NO default — you are choosing the spend (1000 is a sensible starting point). Values above 3000 are rejected through this tool (large pulls are slow/expensive and rarely useful as LLM context — use the graph-service API directly if you genuinely need more). Not accepted for intelligence_signals (its scan size is server-fixed at 3000).",
+        "REQUIRED for records AND insights: how many records to retrieve, between 500 and 3000. Jobs are billed per record, so there is NO default — you are choosing the spend (1000 is a sensible starting point). Values below 500 or above 3000 are rejected through this tool (too few records gives weak intelligence; large pulls are slow/expensive and rarely useful as LLM context — use the graph-service API directly if you genuinely need more). For insights with includeSignals:true the only valid value is exactly 3000.",
     },
-    audience: { type: "string", description: "Target audience description (campaign kinds). Carried into the response context for downstream LLM use; not a retrieval filter." },
-    tone: { type: "string", description: "Desired tone (campaign kinds). Carried into the response context; not a retrieval filter." },
     filters: {
       type: "object",
       additionalProperties: false,
@@ -177,13 +191,13 @@ export const createContextJobJsonSchema = {
         platforms: {
           type: "array",
           items: { type: "string" },
-          description: "Restrict to these platforms (e.g. TIKTOK, INSTAGRAM, YOUTUBE).",
+          description: "Restrict to these platforms (case-insensitive; applies to records and insights). Public set: tiktok, instagram, reddit, pinterest, x, snapchat.",
         },
         window: {
           type: "string",
           enum: ["7d", "30d", "all"],
           description:
-            "Time window. 'all' disables the published_at filter; bounded values keep only fresh content. The API requires an explicit window for intelligence_records, campaign_brief and llm_context — if you omit it, this MCP server defaults it to 'all'. A '24h' window is coming soon and is not yet accepted. Ignored for intelligence_signals (server-fixed to 'all').",
+            "Time window. 'all' disables the published_at filter; bounded values keep only fresh content. The API requires an explicit window for records AND insights — if you omit it, this MCP server defaults it to 'all'. A '24h' window is coming soon and is not yet accepted. For insights with includeSignals:true the window must be 'all'.",
         },
       },
     },
@@ -191,22 +205,39 @@ export const createContextJobJsonSchema = {
       type: "object",
       additionalProperties: false,
       properties: {
-        expandQuery: { type: "boolean", description: "Run LLM query expansion before vector search." },
+        expandQuery: { type: "boolean", description: "Run LLM query expansion before vector search. Applies to records only — ignored for insights." },
         vectors: {
           oneOf: [
             { type: "string", enum: ["all_media"] },
             { type: "array", items: { type: "string" } },
           ],
-          description: "Which vector indexes to query.",
+          description: "Which vector indexes to query. Applies to records only — ignored for insights.",
         },
-        maxDistance: { type: ["number", "null"], description: "Cosine-distance cutoff." },
+        maxDistance: { type: ["number", "null"], description: "Cosine-distance cutoff. Applies to records only — ignored for insights." },
         clusterCount: {
           type: "integer",
           minimum: 2,
           maximum: 8,
-          description: "Number of narrative clusters. Only meaningful for intelligence_signals, where all options are currently server-managed — accepted for forward compatibility but not forwarded.",
+          description: "Number of narrative clusters. Only meaningful for insights, where all options are currently server-managed — accepted for forward compatibility but not forwarded.",
         },
       },
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+// get_context = same input surface as create_context_job (so the agent picks
+// `kind` + query/window/limit identically), plus an optional `verbose`. It
+// submits AND waits, returning the result inline in one call.
+export const getContextJsonSchema = {
+  type: "object",
+  required: ["kind"],
+  properties: {
+    ...createContextJobJsonSchema.properties,
+    verbose: {
+      type: "boolean",
+      description:
+        "If true, return the full untouched graph-service response (richer but more tokens). Default false returns a slim LLM-optimized envelope.",
     },
   },
   additionalProperties: false,

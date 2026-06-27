@@ -1,19 +1,14 @@
 // Phase 3: create_context_job MCP tool. Validates the agent's input, maps it
-// to the backend job-kind contract, calls POST /intelligence/jobs, and
-// returns { jobId, status }. When graph-service responds with an inline cache
-// hit (200 + result), the result is stashed in an in-memory map so the
-// follow-up get_context_job_result call doesn't refetch.
+// to the backend job-kind contract, calls POST /intelligence/jobs, and returns
+// { jobId, status }. On a backend cache hit (200 + inline result) the status is
+// already "succeeded"; the agent's follow-up get_context_job_result re-reads
+// the job from graph-service (whose status endpoint returns the result inline
+// for cache hits), so we keep no MCP-local result cache — it would be wrong
+// across stateless Lambda invocations anyway.
 
-import type { GraphServiceClient } from "../client";
 import { mapCreateContextJobInput } from "../mapping/inputMapper";
 import { createContextJobInputSchema } from "../schemas";
-import type { JobKind } from "../types";
-
-export type CachedJobResult = {
-  kind: JobKind;
-  result: unknown;
-  storedAt: number;
-};
+import type { GraphJobsPort, JobKind } from "../types";
 
 export type CreateContextJobOutput = {
   jobId: string;
@@ -23,55 +18,13 @@ export type CreateContextJobOutput = {
   statusUrl?: string;
 };
 
-// Bounded in-memory cache so a runaway client can't blow up MCP server memory.
-// Process is short-lived (one stdio session per agent invocation); 100 entries
-// is plenty.
-const MAX_CACHED_RESULTS = 100;
-const cachedResults = new Map<string, CachedJobResult>();
-
-export function getCachedJobResult(jobId: string): CachedJobResult | undefined {
-  return cachedResults.get(jobId);
-}
-
-function rememberCachedResult(jobId: string, kind: JobKind, result: unknown): void {
-  if (cachedResults.size >= MAX_CACHED_RESULTS) {
-    // Drop the oldest entry. Map iteration order is insertion order.
-    const firstKey = cachedResults.keys().next().value;
-    if (firstKey !== undefined) cachedResults.delete(firstKey);
-  }
-  cachedResults.set(jobId, { kind, result, storedAt: Date.now() });
-}
-
 export async function createContextJob(
   rawInput: unknown,
-  client: GraphServiceClient
+  client: GraphJobsPort
 ): Promise<CreateContextJobOutput> {
   const parsed = createContextJobInputSchema.parse(rawInput);
   const { kind, input } = mapCreateContextJobInput(parsed);
   const response = await client.submitJob(kind, input);
-
-  // Cache hit: graph-service returned the result inline (200 path in
-  // api/jobs.ts). Stash it so the agent's next get_context_job_result lands
-  // in O(1).
-  if (response.status === "succeeded") {
-    if (response.result !== undefined) {
-      rememberCachedResult(response.jobId, kind, response.result);
-    } else if (response.resultStorage === "s3" && response.resultUrl) {
-      // Large cache hit: the result was too big to inline, so graph-service
-      // returned a presigned S3 URL instead. Download it and cache the full
-      // payload — otherwise the follow-up get_context_job_result would refetch
-      // the job and (because the presigned URL is single-use/short-lived) might
-      // find a stale or expired pointer. Best-effort: a download failure here
-      // just means we don't pre-cache — the result tool can still re-fetch.
-      try {
-        const full = await client.fetchResultUrl(response.resultUrl);
-        rememberCachedResult(response.jobId, kind, full);
-      } catch {
-        // Swallow — leave it uncached; get_context_job_result will retry the
-        // download (and surface a clear error there if it still fails).
-      }
-    }
-  }
 
   return {
     jobId: response.jobId,

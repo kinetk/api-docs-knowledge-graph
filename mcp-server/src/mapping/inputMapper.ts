@@ -1,14 +1,15 @@
 // Shapes the validated MCP tool input into the JSON object that graph-service
-// expects under `input` for each JobKind. Two backend contracts to hit:
-//   - QueryIntelligenceInput (graph-service/src/intelligence/pipeline/types.ts)
-//     for intelligence_records / intelligence_signals
-//   - CampaignBriefInput (graph-service/src/intelligence/pipeline/types.ts)
-//     for campaign_brief / llm_context — accepts campaign, audience, tone,
-//     platforms, window, limit. `product` and `goal` were removed; agents that
-//     still pass `product` are not silently dropped here (the MCP schema
-//     rejects unknown fields with strict()).
-// `filters` and `options` from the MCP shape get flattened into the
-// backend's flat object.
+// expects under `input` for each CANONICAL JobKind, canonicalizing the kind first:
+// the agent may pass a canonical name, an old graph_* name, OR a legacy alias, and we
+// always submit the canonical kind (records / insights) so the backend +
+// the MCP's own response mapping deal in one vocabulary.
+//   - records  → QueryIntelligenceInput (query + window + limit + retrieval knobs)
+//   - insights → query + window + limit (+ the includeSignals projection flag);
+//     graph-service now 400s an insights submit without window/limit, and
+//     includeSignals additionally requires window:"all" + limit:3000 (enforced
+//     in the zod schema before we reach here).
+// `filters` and `options` from the MCP shape get flattened into the backend's flat
+// object.
 
 import type { CreateContextJobInput } from "../schemas";
 import type { JobKind } from "../types";
@@ -16,27 +17,24 @@ import type { JobKind } from "../types";
 type MappedSubmission = { kind: JobKind; input: Record<string, unknown> };
 
 export function mapCreateContextJobInput(input: CreateContextJobInput): MappedSubmission {
-  if (input.kind === "intelligence_records" || input.kind === "intelligence_signals") {
-    return mapRetrievalInput(input);
+  if (input.kind === "records" || input.kind === "graph_records" || input.kind === "intelligence_records") {
+    return mapRecordsInput(input);
   }
-  return mapCampaignInput(input);
+  if (input.kind === "insights" || input.kind === "graph_discovery" || input.kind === "intelligence_signals") {
+    return mapDiscoverInput(input);
+  }
+  throw new Error(`unhandled job kind: ${(input as { kind: string }).kind}`);
 }
 
-function mapRetrievalInput(input: Extract<CreateContextJobInput, { kind: "intelligence_records" | "intelligence_signals" }>): MappedSubmission {
-  // intelligence_signals accepts ONLY `query` server-side — every other input
-  // field is server-managed (window "all", fixed scan size, all platforms,
-  // query expansion on) and the backend 400s anything else. Drop filters/
-  // options here so agent calls succeed; the tool schema documents this.
-  if (input.kind === "intelligence_signals") {
-    return { kind: input.kind, input: { query: input.query } };
-  }
-
+function mapRecordsInput(
+  input: Extract<CreateContextJobInput, { kind: "records" | "graph_records" | "intelligence_records" }>,
+): MappedSubmission {
   const { filters, options } = input;
   const mapped: Record<string, unknown> = {
     query: input.query,
     // The backend requires an explicit limit (no server default — jobs are
     // billed per record, so the caller chooses the spend). The schema already
-    // enforced presence + bounds (100–3000); never defaulted here.
+    // enforced presence + bounds (500–3000); never defaulted here.
     limit: input.limit,
     // The backend requires an explicit window (no server default). When the
     // agent doesn't pick one, "all" (no time filter) is the cheapest and most
@@ -47,26 +45,29 @@ function mapRetrievalInput(input: Extract<CreateContextJobInput, { kind: "intell
   if (options?.expandQuery !== undefined) mapped.expandQuery = options.expandQuery;
   if (options?.vectors !== undefined) mapped.vectors = options.vectors;
   if (options?.maxDistance !== undefined) mapped.maxDistance = options.maxDistance;
-  return { kind: input.kind, input: mapped };
+  return { kind: "records", input: mapped };
 }
 
-function mapCampaignInput(input: Extract<CreateContextJobInput, { kind: "campaign_brief" | "llm_context" }>): MappedSubmission {
-  // CampaignBriefInput intentionally accepts a narrower set of fields than the
-  // retrieval pipeline. We omit options that don't apply (vectors, etc.)
-  // — they'd be silently ignored downstream but better not to send noise.
+function mapDiscoverInput(
+  input: Extract<CreateContextJobInput, { kind: "insights" | "graph_discovery" | "intelligence_signals" }>,
+): MappedSubmission {
+  // insights now mirrors records input-wise: graph-service REQUIRES an explicit
+  // window + limit on the public route (it 400s without them). includeSignals is
+  // an optional projection flag; the zod schema already enforced that, when set,
+  // window is "all" and limit is 3000. We let the agent choose window + limit
+  // (no silent pinning) and forward exactly what it picked.
   const { filters } = input;
   const mapped: Record<string, unknown> = {
-    // The backend requires an explicit limit (no server default — billed per
-    // record; the caller chooses the spend). Presence + bounds (100–3000)
-    // already enforced by the schema; never defaulted here.
+    query: input.query,
+    // The backend requires an explicit limit (billed per record); never defaulted
+    // here (schema enforced presence + bounds 500–3000).
     limit: input.limit,
-    // The backend requires an explicit window (no server default); "all"
-    // (no time filter) when the agent doesn't pick one.
+    // The backend requires an explicit window; "all" (no time filter) by default.
     window: filters?.window ?? "all",
   };
-  if (input.campaign !== undefined) mapped.campaign = input.campaign;
-  if (input.audience !== undefined) mapped.audience = input.audience;
-  if (input.tone !== undefined) mapped.tone = input.tone;
+  // insights accepts the same optional platform filter as records on the public
+  // route — forward it so an agent's platform scoping isn't silently dropped.
   if (filters?.platforms !== undefined) mapped.platforms = filters.platforms;
-  return { kind: input.kind, input: mapped };
+  if (input.includeSignals === true) mapped.includeSignals = true;
+  return { kind: "insights", input: mapped };
 }

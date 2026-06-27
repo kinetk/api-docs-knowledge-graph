@@ -1,0 +1,34 @@
+{
+  "name": "kinetk-example-growth-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KINETK API + MCP showcase — pass a product and an AI agent pulls the live insights signal from the KINETK IP Graph, then Gemini synthesizes a grounded launch & growth plan.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "sst:dev": "sst dev",
+    "deploy": "sst deploy --stage prod",
+    "sst:remove": "sst remove --stage prod"
+  },
+  "dependencies": {
+    "@google/genai": "^2.9.0",
+    "@radix-ui/react-slot": "^1.2.4",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.563.0",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "sst": "3.18.1",
+    "tailwind-merge": "^3.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5"
+  }
+}

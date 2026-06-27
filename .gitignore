@@ -7,3 +7,9 @@ build/
 .env
 .env.local
 *.vscode
+
+*/deploy-demos.sh
+*/kinetk_brand_guide.html
+
+**/sst-**
+**/sst.config**
