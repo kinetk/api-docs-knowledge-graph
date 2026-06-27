@@ -1,0 +1,134 @@
+
+# Connect KINETK to Your AI Assistant
+
+Your AI assistant is great at reasoning, but it doesn't know what's trending on TikTok this morning, which creators are driving a narrative, or how a hashtag is performing across platforms. KINETK does.
+
+With one quick setup, you can connect KINETK to the AI assistant you already use (Claude, ChatGPT, Cursor, and others) and then just **ask in plain English**. Your assistant pulls live intelligence from the KINETK Knowledge Graph, does the heavy lifting behind the scenes, and answers you directly.
+
+> *"What's trending in the World Cup right now?"*
+> *"Which creators are driving the luxury-watch conversation this month?"*
+> *"Pull the top posts about sustainable sneakers so I can cite them."*
+
+You ask. KINETK answers.
+
+---
+
+## Ways to connect
+
+Pick the method your assistant supports — they all reach the same KINETK Knowledge Graph and bill the same account.
+
+| Method | Best for | How you authenticate |
+|--------|----------|----------------------|
+| **Sign in (OAuth)** | **Claude Desktop**, ChatGPT | Click **Connect** → sign in with your KINETK login. No key to copy. |
+| **API key** | **Claude Code**, Cursor, **Gemini CLI**, scripts | Paste your KINETK `x-api-key`. |
+| **OAuth via your IdP** | **Gemini Enterprise** (Agentspace) | Register Gemini Enterprise as an OAuth client; admin setup. See [Gemini Enterprise](#gemini-enterprise-custom-mcp) below. |
+
+> ⚠️ Claude Desktop's "custom connector" only supports the **sign-in** method — it can't send an API-key header. Use the sign-in URL for Desktop, and the API-key URL for Claude Code / Cursor.
+
+### Sign in — Claude Desktop / ChatGPT
+
+1. Open **Settings → Connectors → Add custom connector**.
+2. Paste the **sign-in address:** `https://api.kinetk.ai/graph/connect`
+3. Save, then click **Connect / Sign in** — a browser opens to the KINETK login. Sign in and approve.
+4. KINETK shows as connected, and the tools appear near the message box.
+
+No key, no config files — just sign in.
+
+### API key — Claude Code / Cursor / Gemini CLI
+
+Use the **API-key address:** `https://api.kinetk.ai/graph/mcp` with a header `x-api-key: YOUR_KEY`.
+
+- **Claude Code** (one line):
+  ```
+  claude mcp add --transport http kinetk https://api.kinetk.ai/graph/mcp --header "x-api-key: YOUR_KEY"
+  ```
+- **Cursor:** Settings → MCP / Connectors → Add → paste the address, add the `x-api-key` header, refresh.
+- **Gemini CLI:** add an HTTP server to `~/.gemini/settings.json` (use the `httpUrl` + `headers` keys so the key rides along on every request):
+  ```json
+  {
+    "mcpServers": {
+      "kinetk": {
+        "httpUrl": "https://api.kinetk.ai/graph/mcp",
+        "headers": {
+          "x-api-key": "YOUR_KEY"
+        }
+      }
+    }
+  }
+  ```
+  Start a new `gemini` session, then run `/mcp list` to confirm `kinetk` is connected and `/tools` to see its tools.
+
+Need a key? Contact the KINETK team.
+
+> **Note:** the consumer **Gemini app** (gemini.google.com / mobile) can't add custom MCP connectors yet — use the **Gemini CLI** above, or **Gemini Enterprise** below.
+
+### Gemini Enterprise (custom MCP)
+
+[Gemini Enterprise](https://docs.cloud.google.com/gemini/enterprise/docs/connectors/custom-mcp-server/set-up-custom-mcp-server) (Agentspace) connects to KINETK as a **custom MCP data store**. It uses **OAuth 2.0** through your own identity provider — there's no API-key option here — and only the **StreamableHTTP** transport (point it at the `…/mcp` address, not `…/connect`).
+
+This is an admin-driven setup, not a one-click connect:
+
+1. **Prerequisites.** Have an Organization Policy Administrator enable custom MCP servers (it's off by default), and grant your account the **Discovery Engine Editor** (`roles/discoveryengine.editor`) role.
+2. **Register Gemini Enterprise as an OAuth client** with your IdP (Okta, Azure AD, Google, …), setting the authorization redirect URL to `https://vertexaisearch.cloud.google.com/oauth-redirect`. Note the resulting **Client ID**, **Client Secret**, **Authorization URL**, **Token URL** and **Scopes**.
+3. **Add the server.** In the Google Cloud console → **Gemini Enterprise → Data stores → Create data store**, search **Custom MCP Server (Preview)**, and choose **Add MCP server**.
+4. **Fill the MCP Server Configuration:**
+
+   | Field | Value |
+   |---|---|
+   | **MCP Server URL** | `https://api.kinetk.ai/graph/mcp` |
+   | **Authorization URL** / **Token URL** | from your OAuth registration (step 2) |
+   | **Client ID** / **Client Secret** | from your OAuth registration (step 2) |
+   | **Scopes** | space-separated list from step 2 |
+   | **MCP Server Description** | e.g. "KINETK social-media narrative intelligence" |
+
+5. **Save** and complete the OAuth consent. The KINETK tools become available to your Gemini Enterprise agents.
+
+The OAuth endpoints and client credentials are issued by KINETK — contact the KINETK team to provision them for your organization.
+
+---
+
+## How to use it
+
+Once connected, just talk to your assistant like always, and **mention "kinetk"** when you want live intelligence so it uses the connector instead of answering from memory.
+
+### Find what's trending (intelligence)
+
+> *"Use kinetk to tell me the latest trends in the World Cup."*
+
+You'll get synthesized takeaways — the narratives forming, which platform they're concentrated on, which hashtags carry an engagement premium, and where the white space is.
+
+### Find the source content
+
+> *"Use kinetk to pull the top posts about luxury watches this month."*
+
+You'll get the actual ranked posts and videos — platform, engagement, similarity, and enrichment (themes/tone) — so you can read, cite, or repurpose them.
+
+### Keep going
+
+> *"Which of those creators is biggest on Instagram?"* · *"Turn the third insight into three post ideas."*
+
+The assistant figures out what to look up, waits for results, and summarizes — you don't manage any of it.
+
+---
+
+## Tips for better answers
+
+- **Say "kinetk."** Without the cue your assistant may answer from general knowledge and skip the live data.
+- **Be specific.** "Trends in women's football on TikTok this week" beats "sports trends."
+- **Heavier questions take a moment.** Quick content lookups return in seconds; deeper trend analysis can take up to a minute — your assistant waits and then answers.
+
+---
+
+## About your account and usage
+
+Whether you sign in or use an API key, usage counts against your KINETK account. Pulling content and intelligence draws on your plan; simply being connected does not. Keep your API key private — treat it like a password.
+
+---
+
+## Troubleshooting
+
+- **Assistant answers without using KINETK** → add "use kinetk" and confirm the connector shows connected.
+- **Claude Desktop "couldn't connect to the server"** → make sure you used the **sign-in** address (`…/graph/connect`), not the API-key address. Desktop can't send a key header.
+- **"Unauthorized"** on the API-key method → check the address and that `x-api-key` has no stray spaces.
+- **No Funds** → add funds to your account.
+- **A trend question is slow** → deeper analysis runs a fuller pipeline; give it up to a minute.

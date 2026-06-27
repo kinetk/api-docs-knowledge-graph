@@ -1,11 +1,22 @@
 ---
 title: MCP Overview
-description: What the kinetk MCP server exposes and when to use it.
+description: The two ways to run the kinetk MCP server — hosted and local — and what it exposes.
 ---
 
-The **`kinetk` MCP server** is a [Model Context Protocol](https://modelcontextprotocol.io) server that wraps the heavy KINETK async-job API as agent-friendly tools. AI clients (Claude, Cursor, Gemini CLI, Windsurf, …) launch it as a subprocess and call its tools over JSON-RPC — your prompt mentions `kinetk` and the LLM submits real retrieval jobs, polls them, and gets back token-efficient response envelopes.
+The **`kinetk` MCP server** is a [Model Context Protocol](https://modelcontextprotocol.io) server that wraps the heavy KINETK async-job API as agent-friendly tools. Your prompt mentions `kinetk` and the LLM submits real retrieval jobs, polls them, and gets back token-efficient response envelopes.
 
-Source code lives in [`mcp-server/`](https://github.com/kinetk/api-docs-knowledge-graph/tree/main/mcp-server) in this repo. Installation: [Installation](./installation.mdx). Per-tool reference: [Tools](./tools.mdx).
+There are **two ways to run it** — both expose the same tools, hit the same [Graph Service](https://api.kinetk.ai/graph) backend, and bill the same account:
+
+| | **Hosted MCP** (remote) | **Local MCP** (stdio) |
+|---|---|---|
+| What it is | A managed HTTP endpoint KINETK hosts for you | The `kinetk-mcp` package you run as a subprocess |
+| Setup | Nothing to install — sign in (OAuth) or pass an `x-api-key` header | Clone, `npm install`, `npm run build`, point your client at `dist/index.js` |
+| Transport | HTTP / SSE | stdio |
+| Auth | OAuth sign-in **or** API key | API key via env var |
+| Best for | Claude Desktop, ChatGPT, Claude Code, Cursor, Gemini CLI — anything that supports remote connectors | Pinning a specific version, local/offline dev, custom forks |
+| Guide | [Hosted MCP](./hosted-mcp.mdx) | [Installation](./installation.mdx) |
+
+Most users want the **[Hosted MCP](./hosted-mcp.mdx)** — there's nothing to install. Reach for the local package when you need to pin a version or run a modified build; its source lives in [`mcp-server/`](https://github.com/kinetk/api-docs-knowledge-graph/tree/main/mcp-server). Per-tool reference (same for both): [Tools](./tools.mdx).
 
 ## What the MCP exposes
 
@@ -35,9 +46,8 @@ The MCP intentionally surfaces only the async `intelligence/jobs` flow. The prec
 Graph-service results can be 100s of KB. AI agents pay per token, so by default the MCP returns a slim envelope per kind:
 
 - `records`: per-content rows (`id`, `platform`, `title`, `tags`, `similarity`, `engagement`, `creator`) plus the relationship `graph`.
-- `insights`: the LLM insight arrays only (`insights`, `tagInsights`, `narrativeInsights`) — no content rows, no graphs.
+- `insights`: dense narrative insights and relationships (`topTags`, `tagCombinations`, `narrativeInsights`, …) plus the structured signals.
 
-Skipped by default: secondary analytics and per-item detail beyond the fields above. Pass `verbose: true` to `get_context_job_result` to get the untouched payload.
 
 ## Prompting tips
 
@@ -50,6 +60,5 @@ Without one of these cues, Claude/Cursor will answer from general knowledge and 
 
 ## Transport
 
-The MCP currently speaks **stdio** only. Clients launch `kinetk-mcp` as a subprocess and exchange JSON-RPC frames on its stdin/stdout. Stdout is reserved for protocol frames; any logs the server emits go to stderr.
-
-HTTP/SSE transport is planned for v2 (would unlock ChatGPT Connectors and remote use cases). Today, see [Installation](./installation.mdx) for the supported clients.
+- **Hosted MCP** speaks **HTTP / SSE**. Connect over OAuth sign-in or an `x-api-key` header — no subprocess to manage. See [Hosted MCP](./hosted-mcp.mdx).
+- **Local MCP** (`kinetk-mcp`) speaks **stdio**. Clients launch it as a subprocess and exchange JSON-RPC frames on its stdin/stdout. See [Installation](./installation.mdx).

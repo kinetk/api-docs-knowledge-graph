@@ -43,7 +43,7 @@ const optionsSchema = z
 // tool call. 3000 is plenty for the context an LLM actually consumes. Note: the
 // includeSignals projection (insights only) requires window:"all" + limit:3000,
 // so with the cap the only valid includeSignals limit is exactly 3000.
-const MCP_LIMIT_MIN = 100;
+const MCP_LIMIT_MIN = 500;
 export const MCP_LIMIT_MAX = 3000;
 const limitSchema = (kind: string) =>
   z
@@ -102,7 +102,7 @@ const discoverBranch = (kind: DiscoverKind) =>
 // limit:3000 for it. With the MCP's 3000 cap that means limit must be EXACTLY 3000.
 // Enforce here (a union-level superRefine) so the agent gets a fast, readable MCP
 // error instead of a backend 400. Non-includeSignals insights may use any window
-// (7d/30d/all) + any limit 100–3000.
+// (7d/30d/all) + any limit 500–3000.
 export const createContextJobInputSchema = z
   .discriminatedUnion("kind", [
     recordsBranch("records"),
@@ -179,10 +179,10 @@ export const createContextJobJsonSchema = {
     },
     limit: {
       type: "integer",
-      minimum: 100,
+      minimum: 500,
       maximum: 3000,
       description:
-        "REQUIRED for records AND insights: how many records to retrieve, between 100 and 3000. Jobs are billed per record, so there is NO default — you are choosing the spend (1000 is a sensible starting point). Values above 3000 are rejected through this tool (large pulls are slow/expensive and rarely useful as LLM context — use the graph-service API directly if you genuinely need more). For insights with includeSignals:true the only valid value is exactly 3000.",
+        "REQUIRED for records AND insights: how many records to retrieve, between 500 and 3000. Jobs are billed per record, so there is NO default — you are choosing the spend (1000 is a sensible starting point). Values below 500 or above 3000 are rejected through this tool (too few records gives weak intelligence; large pulls are slow/expensive and rarely useful as LLM context — use the graph-service API directly if you genuinely need more). For insights with includeSignals:true the only valid value is exactly 3000.",
     },
     filters: {
       type: "object",

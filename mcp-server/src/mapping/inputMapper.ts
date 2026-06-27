@@ -34,7 +34,7 @@ function mapRecordsInput(
     query: input.query,
     // The backend requires an explicit limit (no server default — jobs are
     // billed per record, so the caller chooses the spend). The schema already
-    // enforced presence + bounds (100–3000); never defaulted here.
+    // enforced presence + bounds (500–3000); never defaulted here.
     limit: input.limit,
     // The backend requires an explicit window (no server default). When the
     // agent doesn't pick one, "all" (no time filter) is the cheapest and most
@@ -60,7 +60,7 @@ function mapDiscoverInput(
   const mapped: Record<string, unknown> = {
     query: input.query,
     // The backend requires an explicit limit (billed per record); never defaulted
-    // here (schema enforced presence + bounds 100–3000).
+    // here (schema enforced presence + bounds 500–3000).
     limit: input.limit,
     // The backend requires an explicit window; "all" (no time filter) by default.
     window: filters?.window ?? "all",
