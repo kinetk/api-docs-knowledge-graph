@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+@theme {
+  /* surfaces, darkest to lightest */
+  --color-canvas: #12141a;
+  --color-surface: #191c24;
+  --color-card: #1d212b;
+
+  /* divider lines */
+  --color-line: rgba(232, 230, 222, 0.09);
+  --color-line-strong: rgba(232, 230, 222, 0.16);
+
+  /* text, most to least prominent */
+  --color-ink: #ece9e1;
+  --color-muted: #9a9ca8;
+  --color-faint: #5e6070;
+
+  /* brand accents (defaults; overridden by config/brand.ts at runtime) + semantic colors */
+  --color-accent: #e0a458;
+  --color-accent-2: #6683f5;
+  --color-positive: #7fd88f;
+  --color-negative: #e0a1a1;
+
+  /* derived tints - follow the colors above via color-mix, so a recolor
+     of --color-accent / positive / negative carries through automatically */
+  --color-flag: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  --color-flag-line: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  --color-flag-ink: color-mix(
+    in srgb,
+    var(--color-accent) 65%,
+    var(--color-ink)
+  );
+  --color-flag-strong: color-mix(
+    in srgb,
+    var(--color-accent) 45%,
+    var(--color-ink)
+  );
+  --color-live: color-mix(in srgb, var(--color-positive) 12%, transparent);
+  --color-live-line: color-mix(in srgb, var(--color-positive) 30%, transparent);
+  --color-fail: color-mix(in srgb, var(--color-negative) 10%, transparent);
+  --color-fail-line: color-mix(in srgb, var(--color-negative) 28%, transparent);
+
+  /* marquee for the ticker (refresh spinner uses the built-in animate-spin) */
+  --animate-marquee: marquee 34s linear infinite;
+}
+
+/* Map next/font CSS variables onto the theme's font tokens. */
+@theme inline {
+  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-plex-mono);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    min-height: 100vh;
+    /* ambient glow, derived from the accent tokens */
+    background-image:
+      radial-gradient(
+        ellipse 1200px 600px at 15% -10%,
+        color-mix(in srgb, var(--color-accent) 8%, transparent),
+        transparent 60%
+      ),
+      radial-gradient(
+        ellipse 1000px 700px at 100% 10%,
+        color-mix(in srgb, var(--color-accent-2) 6%, transparent),
+        transparent 55%
+      );
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-canvas);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 5px;
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
