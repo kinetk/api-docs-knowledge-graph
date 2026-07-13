@@ -10,9 +10,9 @@ const BASE =
 
 const VARIANTS = {
   default:
-    "bg-[#26AEC0] text-white hover:bg-gradient-to-r hover:from-[#EEB248] hover:to-[#FFD700] hover:text-black",
+    "bg-kinetk-teal text-white hover:bg-gradient-to-r hover:from-kinetk-amber hover:to-kinetk-yellow hover:text-black",
   outline:
-    "border border-kinetk-cyan text-kinetk-cyan bg-transparent hover:bg-gradient-to-r hover:from-[#EEB248] hover:to-[#FFD700] hover:text-black hover:border-[#EEB248]",
+    "border border-kinetk-cyan text-kinetk-cyan bg-transparent hover:bg-gradient-to-r hover:from-kinetk-amber hover:to-kinetk-yellow hover:text-black hover:border-kinetk-amber",
 } as const;
 
 function Button({

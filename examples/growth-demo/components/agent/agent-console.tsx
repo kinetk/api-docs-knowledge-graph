@@ -12,6 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { AgentEvent, ToolName } from "@/lib/kinetk/types";
+import { content } from "@/config/content";
 
 const TOOL_META: Record<ToolName, { Icon: typeof Play; label: string }> = {
   create_context_job: { Icon: Play, label: "create_context_job" },
@@ -41,7 +42,7 @@ export default function AgentConsole({
           <span className="size-2.5 rounded-full bg-white/15" />
         </span>
         <span className="ml-1 text-xs font-medium text-white/55">
-          agent · KINETK MCP + Gemini
+          {content.console.label}
         </span>
         {running && (
           <span className="ml-auto flex items-center gap-1.5 text-xs text-kinetk-cyan">

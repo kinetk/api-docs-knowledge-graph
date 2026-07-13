@@ -1,5 +1,12 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import {
+  Bebas_Neue,
+  Inter,
+  Space_Grotesk,
+  JetBrains_Mono,
+} from "next/font/google";
+import { brandStyle } from "@/config/brand";
+import { content } from "@/config/content";
 import "./globals.css";
 
 const inter = Inter({
@@ -29,16 +36,15 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Growth Demo — KINETK API + MCP showcase",
-  description:
-    "Pass a product and watch an AI agent pull the live market signal from the KINETK IP Graph (the insights job), then have Gemini synthesize a grounded launch & growth plan.",
+  title: content.meta.title,
+  description: content.meta.description,
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" style={brandStyle}>
       <body
         className={`${inter.variable} ${bebasNeue.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased min-h-dvh`}
       >

@@ -18,9 +18,12 @@
 }
 
 :root {
+  /* Neutral palette — the ink background + foreground. Edit these here. */
   --background: #000;
   --foreground: #fff;
 
+  /* Brand accents — DEFAULTS only. `config/brand.ts` overrides these at runtime
+     via `brandStyle` in `app/layout.tsx`, so recolor in brand.ts, not here. */
   --kinetk-cyan: #00f5ff;
   --kinetk-teal: #26aec0;
   --kinetk-amber: #eeb248;

@@ -7,10 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "sst:dev": "sst dev",
-    "deploy": "sst deploy --stage prod",
-    "sst:remove": "sst remove --stage prod"
+    "lint": "next lint"
   },
   "dependencies": {
     "@google/genai": "^2.9.0",
@@ -20,7 +17,6 @@
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "sst": "3.18.1",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
