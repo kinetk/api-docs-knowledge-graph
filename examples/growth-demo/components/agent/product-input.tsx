@@ -3,12 +3,7 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-const EXAMPLES = [
-  "a $400 sleep-tracking ring for anxious millennials",
-  "a refillable matcha starter kit for Gen Z",
-  "a weighted blanket for hot sleepers",
-];
+import { content } from "@/config/content";
 
 export default function ProductInput({
   onRun,
@@ -40,18 +35,18 @@ export default function ProductInput({
         <input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Describe your product in one sentence…"
+          placeholder={content.input.placeholder}
           aria-label="Product"
           className="min-w-0 flex-1 bg-transparent px-2 py-2.5 text-white placeholder:text-white/35 focus:outline-none"
         />
         <Button type="submit" isLoading={running} disabled={!value.trim()}>
-          {running ? "Working…" : "Build the growth plan"}
+          {running ? content.input.submitBusy : content.input.submitIdle}
         </Button>
       </form>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs text-white/40">Try:</span>
-        {EXAMPLES.map((s) => (
+        <span className="text-xs text-white/40">{content.input.examplesLabel}</span>
+        {content.input.examples.map((s) => (
           <button
             key={s}
             type="button"

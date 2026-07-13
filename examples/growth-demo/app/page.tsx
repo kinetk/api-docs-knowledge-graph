@@ -1,9 +1,22 @@
 import { Button } from "@/components/ui/button";
 import AgentView from "@/components/agent/agent-view";
-
-const API_ACCESS_URL = "https://platform.kinetk.ai/login";
+import { content } from "@/config/content";
 
 const MAX_QUERY_LEN = 160;
+
+/** Renders the CTA heading with the `accent` words highlighted in brand teal. */
+function renderCtaHeading() {
+  const { heading, accent } = content.cta;
+  const at = accent ? heading.indexOf(accent) : -1;
+  if (at === -1) return heading;
+  return (
+    <>
+      {heading.slice(0, at)}
+      <span className="text-kinetk-teal">{accent}</span>
+      {heading.slice(at + accent.length)}
+    </>
+  );
+}
 
 export default async function Home({
   searchParams,
@@ -19,7 +32,7 @@ export default async function Home({
       <section className="relative overflow-hidden py-16 sm:py-24">
         <div className="relative z-10 mx-auto max-w-kinetk px-4">
           <p className="mb-8 text-center text-xs font-medium uppercase tracking-[0.22em] text-kinetk-cyan">
-            KINETK API + MCP · Live Demo
+            {content.eyebrow}
           </p>
           <AgentView initialQuery={initialQuery} />
         </div>
@@ -30,25 +43,12 @@ export default async function Home({
           <div className="flex items-center gap-6">
             <div className="h-px flex-1 bg-white/15" />
             <h2 className="font-bebasNeue text-3xl tracking-wide md:text-4xl">
-              Why a chatbot can&apos;t do this
+              {content.explainer.heading}
             </h2>
             <div className="h-px flex-1 bg-white/15" />
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
-            {[
-              {
-                title: "Grounded demand, not guesses",
-                body: "A bare LLM invents angles from stale priors. Every hook, channel and proof point here is built on what's actually resonating around the category now — with the signal shown right beside it.",
-              },
-              {
-                title: "Context over MCP, strategy from Gemini",
-                body: "The agent runs the KINETK MCP workflow — create job, poll, fetch the insights result — then Gemini turns that live signal into a launch & growth plan. You watch both halves happen.",
-              },
-              {
-                title: "Where it converts",
-                body: "Per-platform engagement premiums, amplifier scores and tag arbitrage rank the channels and hooks — so 'how do I launch this' becomes a defensible, prioritized plan.",
-              },
-            ].map((c) => (
+            {content.explainer.cards.map((c) => (
               <div
                 key={c.title}
                 className="space-y-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-6"
@@ -66,12 +66,11 @@ export default async function Home({
       <section className="pb-28">
         <div className="mx-auto flex max-w-kinetk flex-col items-center justify-between gap-6 px-4 lg:flex-row lg:gap-0">
           <h2 className="max-w-lg text-center font-bebasNeue text-3xl leading-tight tracking-wide text-white md:text-4xl lg:text-left">
-            Give your agents the{" "}
-            <span className="text-kinetk-teal">KINETK MCP</span>
+            {renderCtaHeading()}
           </h2>
           <Button className="w-full xs:w-fit" asChild>
-            <a href={API_ACCESS_URL} target="_blank" rel="noopener noreferrer">
-              Get your API key
+            <a href={content.cta.href} target="_blank" rel="noopener noreferrer">
+              {content.cta.buttonLabel}
             </a>
           </Button>
         </div>

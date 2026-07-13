@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentEvent, GrowthGen, GrowthSignals } from "@/lib/kinetk/types";
+import { content } from "@/config/content";
 import ProductInput from "./product-input";
 import AgentConsole from "./agent-console";
 import GrowthResultView from "./growth-result";
@@ -184,14 +185,13 @@ export default function AgentView({
         {!started && (
           <div className="mb-8 text-center">
             <h1 className="font-bebasNeue text-4xl leading-none tracking-wide text-white sm:text-6xl md:text-6xl">
-              Watch an agent build a{" "}
-              <span className="bg-linear-to-r from-[#00F5FF] to-[#26AEC0] bg-clip-text text-transparent">
-                launch &amp; growth plan for your product
+              {content.hero.headlineLead}{" "}
+              <span className="bg-linear-to-r from-kinetk-cyan to-kinetk-teal bg-clip-text text-transparent">
+                {content.hero.headlineEmphasis}
               </span>
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-white/65">
-              Describe your product in one sentence. KINETK analyzes live social
-              signals and generates an evidence-backed launch and growth plan.
+              {content.hero.subhead}
             </p>
           </div>
         )}
@@ -215,9 +215,7 @@ export default function AgentView({
             ) : (
               <div className="grid h-105 place-items-center rounded-xl border border-dashed border-white/10 lg:h-170">
                 <p className="text-sm text-white/40">
-                  {running
-                    ? "Agent is working — Gemini authoring the launch plan…"
-                    : "Awaiting result…"}
+                  {running ? content.status.building : content.status.awaiting}
                 </p>
               </div>
             )}

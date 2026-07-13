@@ -9,6 +9,7 @@ import {
   GrowthSignals,
 } from "@/lib/kinetk/types";
 import { biggestBet, topNarratives } from "@/lib/kinetk/map-insights";
+import { content } from "@/config/content";
 import { Brain } from "lucide-react";
 
 const SYNTH_MODEL = "gemini-3.5-flash";
@@ -100,7 +101,7 @@ export default function GrowthResultView({
         <div>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <p className="text-xs uppercase tracking-[0.18em] text-kinetk-amber">
-              Launch plan
+              {content.result.launchPlanEyebrow}
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-kinetk-amber/40 bg-kinetk-amber/6 px-2.5 py-1 text-xs text-kinetk-amber">
@@ -188,8 +189,8 @@ export default function GrowthResultView({
       {/* 2 — SELLING HOOKS */}
       {top.length > 0 && (
         <Section
-          title="Selling hooks"
-          hint="Top narratives by trendScore, turned into creative angles."
+          title={content.result.hooks.title}
+          hint={content.result.hooks.hint}
         >
           <ol className="space-y-2.5">
             {top.map((n, i) => (
@@ -238,8 +239,8 @@ export default function GrowthResultView({
       {/* 3 — WHO'S BUYING */}
       {(gen.targetAudience || gen.underservedAudience) && (
         <Section
-          title="Who's buying"
-          hint="Target audience and underserved niche."
+          title={content.result.audience.title}
+          hint={content.result.audience.hint}
         >
           <div className="grid gap-2 sm:grid-cols-2">
             {gen.targetAudience && (
@@ -269,8 +270,8 @@ export default function GrowthResultView({
       {/* 4 — TELEMETRY SCORES */}
       {signals.platformOpportunities.length > 0 && (
         <Section
-          title="Telemetry narrative examples"
-          hint="Platform intelligence"
+          title={content.result.telemetry.title}
+          hint={content.result.telemetry.hint}
         >
           <div className="space-y-2">
             {signals.platformOpportunities.slice(0, 3).map((o, i) => (
@@ -303,8 +304,8 @@ export default function GrowthResultView({
         signals.emergingTags.length > 0 ||
         signals.tagCombinations.length > 0) && (
         <Section
-          title="Hashtag strategy"
-          hint="Momentum, emerging whitespace, and the strongest pairs."
+          title={content.result.hashtags.title}
+          hint={content.result.hashtags.hint}
         >
           {signals.momentumTags.length > 0 && (
             <div className="space-y-1.5">
@@ -391,8 +392,8 @@ export default function GrowthResultView({
         signals.aestheticStyles.length > 0 ||
         signals.emotionMoods.length > 0) && (
         <Section
-          title="Visual intelligence"
-          hint="The mood board the multimodal embeddings surfaced."
+          title={content.result.visual.title}
+          hint={content.result.visual.hint}
         >
           {gen.visualTheme && (
             <p className="text-sm leading-snug text-white/75">
@@ -429,8 +430,8 @@ export default function GrowthResultView({
       {/* 7 — PROOF */}
       {proof.length > 0 && (
         <Section
-          title="Proof — content that landed"
-          hint="Real posts behind the signal (metadata only; no deep-links)."
+          title={content.result.proof.title}
+          hint={content.result.proof.hint}
         >
           <div className="grid gap-2 sm:grid-cols-2">
             {proof.map((e) => (
