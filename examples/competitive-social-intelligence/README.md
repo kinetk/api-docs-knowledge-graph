@@ -6,6 +6,8 @@ renders share of voice, a weekly engagement trend, a per-subject playbook,
 summary metrics and auto-clustered content narratives - with an optional live
 refresh straight from the KINETK graph over MCP.
 
+**Live demo:** [calibre-demo.kinetk.ai](https://calibre-demo.kinetk.ai)
+
 It ships as a template. The numbers are **pulled** from KINETK into a JSON file,
 the words are **authored** in a config file, and the branding lives in a third -
 so you can point it at your own subjects without touching the UI. A ready-made
@@ -18,7 +20,7 @@ Download the template and install its dependencies in one step (`--install`
 runs the package manager for you):
 
 ```bash
-npx giget@latest gh:andrijaweb/competitive-social-intelligence my-dashboard --install
+npx giget@latest gh:kinetk/api-docs-knowledge-graph/examples/competitive-social-intelligence#main my-dashboard --install
 ```
 
 Then run the dev server:
