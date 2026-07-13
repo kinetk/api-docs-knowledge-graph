@@ -9,6 +9,7 @@ synthesis step).
 | App | What it shows | Hero capability |
 | --- | --- | --- |
 | [`growth-demo`](./growth-demo) | Pass a product → an AI agent pulls the live `insights` signal over MCP and Gemini synthesizes a grounded launch & growth plan (positioning, selling hooks, audience, telemetry, hashtags, visual theme). | MCP `insights` + Gemini synthesis |
+| [`competitive-social-intelligence`](./competitive-social-intelligence) | Point it at a competitive set of subjects → renders share of voice, a weekly engagement trend, a per-subject playbook, summary metrics and auto-clustered content narratives, with optional live refresh straight from the KINETK graph over MCP. | MCP live `insights` refresh + data-driven dashboard |
 
 
 ## Quick start
