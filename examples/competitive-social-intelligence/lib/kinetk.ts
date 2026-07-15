@@ -111,7 +111,7 @@ export async function pollInsightsJob(
     const done = readToolPayload(
       await client.callTool({
         name: "get_context_job_result",
-        arguments: { jobId, verbose: true },
+        arguments: { jobId },
       }),
     );
     // A result fetch can still race ahead of the status flip and report pending.

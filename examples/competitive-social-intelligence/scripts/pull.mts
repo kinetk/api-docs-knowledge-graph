@@ -20,6 +20,14 @@ const MAX_RETRIES = 3;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Debug: raw kinetk responses captured per subject, written to <topic>.raw.json.
+const rawDumps: {
+  query: string;
+  jobId: string;
+  submit: unknown;
+  result: unknown;
+}[] = [];
+
 class JobFailedError extends Error {}
 
 async function connect(): Promise<Client> {
@@ -66,7 +74,7 @@ async function runInsightsJob(
     await client.callTool(
       {
         name: "create_context_job",
-        arguments: { kind: "insights", query, filters: { window }, limit },
+        arguments: { kind: "insights", query, filters: { window }, limit, returnRecords: limit },
       },
       undefined,
       CALL_OPTS,
@@ -97,12 +105,13 @@ async function runInsightsJob(
 
   const done = readPayload(
     await client.callTool(
-      { name: "get_context_job_result", arguments: { jobId, verbose: true } },
+      { name: "get_context_job_result", arguments: { jobId} },
       undefined,
       CALL_OPTS,
     ),
   );
   const result = (done.result ?? done) as InsightsResultRaw;
+  rawDumps.push({ query, jobId, submit, result: done });
   return result;
 }
 
@@ -196,6 +205,11 @@ async function main() {
   console.log(
     `Wrote ${outPath} (${entities.length}/${subjects.length} subjects).`,
   );
+
+  // Debug: raw kinetk responses (submit + full job result) per subject.
+  const rawPath = join(outDir, `${topic}.raw.json`);
+  writeFileSync(rawPath, JSON.stringify(rawDumps, null, 2) + "\n");
+  console.log(`Wrote ${rawPath} (${rawDumps.length} raw responses).`);
 
   if (failures.length > 0) {
     console.warn(`\n${failures.length} subject(s) failed and were skipped:`);

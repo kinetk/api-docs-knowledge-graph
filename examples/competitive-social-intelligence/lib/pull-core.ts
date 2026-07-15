@@ -32,10 +32,13 @@ interface RawPost {
   platform?: unknown;
   description?: unknown;
   publishedAt?: unknown;
-  viewCount?: unknown;
-  likeCount?: unknown;
-  commentCount?: unknown;
-  shareCount?: unknown;
+  // KINETK returns engagement metrics nested under `engagement`.
+  engagement?: {
+    views?: unknown;
+    likes?: unknown;
+    comments?: unknown;
+    shares?: unknown;
+  };
 }
 
 export interface InsightsResultRaw {
@@ -162,10 +165,10 @@ export function shapeEntity(
   const step = weeks.boundaries[1] - weeks.boundaries[0];
 
   for (const c of content) {
-    const v = num(c.viewCount);
-    const l = num(c.likeCount);
-    const cm = num(c.commentCount);
-    const sh = num(c.shareCount);
+    const v = num(c.engagement?.views);
+    const l = num(c.engagement?.likes);
+    const cm = num(c.engagement?.comments);
+    const sh = num(c.engagement?.shares);
     views += v;
     likes += l;
     comments += cm;
@@ -208,8 +211,8 @@ export function shapeEntity(
       return {
         platform,
         description,
-        views: num(c.viewCount),
-        likes: num(c.likeCount),
+        views: num(c.engagement?.views),
+        likes: num(c.engagement?.likes),
       };
     })
     .filter((p): p is TopPost => p !== null)
