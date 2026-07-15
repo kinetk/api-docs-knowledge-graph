@@ -1,127 +1,126 @@
-import "server-only";
-
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type {
   InsightsJobState,
   InsightsResult,
   Narrative,
   WhitespaceTag,
-} from "@/lib/types";
+} from "./types";
 
-/**
- * Server-side KINETK access for the Content Narratives live refresh.
- *
- * The browser can't call KINETK directly without leaking the key, so requests
- * are proxied through the `/api/insights/*` route handlers, which authenticate
- * with the `x-api-key` header. No model is involved; the summaries come straight
- * from KINETK's structured `insights`.
- *
- * The work is split into two fast steps so no single HTTP request is ever held
- * open for the length of a job:
- *
- *   - `startInsightsJob` submits with `create_context_job` and returns a `jobId`
- *     immediately (no inline wait).
- *   - `pollInsightsJob` does ONE status check (plus a result fetch once done).
- *
- * The browser drives the poll loop across many short requests. This mirrors the
- * async-job pattern the KINETK demo app uses and avoids the gateway/function
- * timeouts that a minutes-long request would hit.
- */
+export const KINETK_BASE =
+  process.env.KINETK_API_BASE ?? "https://api.kinetk.ai/graph";
 
-// KINETK's programmatic MCP endpoint. Auth is the `x-api-key` header (below);
-// /graph/connect is the OAuth endpoint for Claude Desktop and won't work here.
-const MCP_URL = process.env.KINETK_MCP_URL ?? "https://api.kinetk.ai/graph/mcp";
+export type PullWindow = "7d" | "30d" | "all";
+export type JobKind = "records" | "insights";
 
-// Insight pull parameters: trailing 30 days, structured output (no prose), and
-// the minimum analysis depth the graph accepts (the floor is 750).
-const WINDOW = "30d";
+export interface JobInput {
+  query: string;
+  window: PullWindow;
+  limit: number;
+  returnRecords?: number;
+  platforms?: string[];
+}
+
+export type JobState =
+  | { status: "running" }
+  | { status: "succeeded"; result: Record<string, unknown> }
+  | { status: "failed"; error: string };
+
+async function readJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error(
+      `KINETK ${res.status}: non-JSON response ${text.slice(0, 200)}`,
+    );
+  }
+}
+
+function errorText(body: Record<string, unknown>): string {
+  return typeof body.error === "string"
+    ? body.error
+    : JSON.stringify(body).slice(0, 200);
+}
+
+export async function submitJob(
+  kind: JobKind,
+  input: JobInput,
+  apiKey: string,
+): Promise<string> {
+  const res = await fetch(`${KINETK_BASE}/intelligence/jobs`, {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "content-type": "application/json" },
+    body: JSON.stringify({ kind, input }),
+  });
+  const body = await readJson(res);
+  if (!res.ok) {
+    throw new Error(`KINETK submit failed (${res.status}): ${errorText(body)}`);
+  }
+  const { jobId } = body;
+  if (typeof jobId !== "string" || jobId.length === 0) {
+    throw new Error("KINETK did not return a jobId");
+  }
+  return jobId;
+}
+
+export async function getJob(jobId: string, apiKey: string): Promise<JobState> {
+  const res = await fetch(`${KINETK_BASE}/intelligence/jobs/${jobId}`, {
+    headers: { "x-api-key": apiKey },
+  });
+  const body = await readJson(res);
+  if (!res.ok) {
+    throw new Error(`KINETK poll failed (${res.status}): ${errorText(body)}`);
+  }
+
+  if (body.status === "failed") {
+    return {
+      status: "failed",
+      error: typeof body.error === "string" ? body.error : "unknown error",
+    };
+  }
+  if (body.status !== "succeeded") {
+    return { status: "running" };
+  }
+
+  let result = body.result as Record<string, unknown> | undefined;
+  if (
+    !result &&
+    body.resultStorage === "s3" &&
+    typeof body.resultUrl === "string"
+  ) {
+    const dl = await fetch(body.resultUrl);
+    if (!dl.ok) {
+      throw new Error(`KINETK result download failed (${dl.status})`);
+    }
+    result = (await dl.json()) as Record<string, unknown>;
+  }
+  // The result can briefly lag the status flip; treat that as still running.
+  if (!result || typeof result !== "object") return { status: "running" };
+  return { status: "succeeded", result };
+}
+
+const WINDOW: PullWindow = "30d";
 const LIMIT = 750;
 const MAX_NARRATIVES = 4;
 const MAX_WHITESPACE = 5;
 
-/** Open an MCP connection to KINETK, run `fn`, and always close it. */
-async function withClient<T>(
-  apiKey: string,
-  fn: (client: Client) => Promise<T>,
-): Promise<T> {
-  const client = new Client({ name: "social-intelligence-dashboard", version: "1.0.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
-    requestInit: { headers: { "x-api-key": apiKey } },
-  });
-
-  await client.connect(transport);
-  try {
-    return await fn(client);
-  } finally {
-    await client.close();
-  }
-}
-
-/** Submit an insights job and return its `jobId` immediately (no inline wait). */
 export async function startInsightsJob(
   query: string,
   apiKey: string,
 ): Promise<string> {
-  return withClient(apiKey, async (client) => {
-    const payload = readToolPayload(
-      await client.callTool({
-        name: "create_context_job",
-        arguments: {
-          kind: "insights",
-          query,
-          filters: { window: WINDOW },
-          limit: LIMIT,
-        },
-      }),
-    );
-
-    const { jobId } = payload;
-    if (typeof jobId !== "string" || jobId.length === 0) {
-      throw new Error("KINETK did not return a jobId");
-    }
-    return jobId;
-  });
+  return submitJob("insights", { query, window: WINDOW, limit: LIMIT }, apiKey);
 }
 
-/**
- * Poll a job once. Checks `get_context_job_status`; when the job is finished it
- * fetches and shapes the result. Returns `running` while the job is in flight.
- */
 export async function pollInsightsJob(
   jobId: string,
   apiKey: string,
 ): Promise<InsightsJobState> {
-  return withClient(apiKey, async (client) => {
-    const status = readToolPayload(
-      await client.callTool({
-        name: "get_context_job_status",
-        arguments: { jobId },
-      }),
-    );
-
-    // `create_context_job` reports a finished job as "succeeded"; the status
-    // tool reports it as "completed" - treat both as the same terminal state.
-    const state = status.status;
-    if (state === "failed") return { status: "failed" };
-    if (state !== "completed" && state !== "succeeded") {
-      return { status: "running" };
-    }
-
-    const done = readToolPayload(
-      await client.callTool({
-        name: "get_context_job_result",
-        arguments: { jobId },
-      }),
-    );
-    // A result fetch can still race ahead of the status flip and report pending.
-    if (done.status === "pending") return { status: "running" };
-
-    return { status: "succeeded", result: shapeInsights(unwrapResult(done)) };
-  });
+  const state = await getJob(jobId, apiKey);
+  if (state.status === "failed") return { status: "failed" };
+  if (state.status !== "succeeded") return { status: "running" };
+  return { status: "succeeded", result: shapeInsights(state.result) };
 }
 
-/** Map KINETK's structured insights into the dashboard's `InsightsResult`. */
 function shapeInsights(result: Record<string, unknown>): InsightsResult {
   const narratives = asArray(result.narratives)
     .map(toNarrative)
@@ -129,11 +128,9 @@ function shapeInsights(result: Record<string, unknown>): InsightsResult {
     .sort((a, b) => b.count - a.count)
     .slice(0, MAX_NARRATIVES);
 
-  const whitespace = asArray(result.tagSignals)
+  const whitespace = asArray(result.tagInfo ?? result.tagSignals)
     .map(toRankedTag)
     .filter((t): t is RankedTag => t !== null)
-    // Rank by whitespaceScore - KINETK's "high premium, low saturation" measure,
-    // which matches the section heading - but display the engagement premium.
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_WHITESPACE)
     .map(({ tag, premiumPct }) => ({ tag, premiumPct }));
@@ -157,8 +154,6 @@ function toRankedTag(value: unknown): RankedTag | null {
   if (typeof value !== "object" || value === null) return null;
   const { key, tag, engagementPremiumPct, opportunityScore, whitespaceScore } =
     value as Record<string, unknown>;
-  // The updated graph renamed `tag` -> `key` and swapped `whitespaceScore` for
-  // `opportunityScore`; fall back to the old names for older payloads.
   const name =
     typeof key === "string" ? key : typeof tag === "string" ? tag : null;
   if (name === null) return null;
@@ -167,39 +162,6 @@ function toRankedTag(value: unknown): RankedTag | null {
     premiumPct: Math.round((Number(engagementPremiumPct) || 0) * 10) / 10,
     score: Number(opportunityScore) || Number(whitespaceScore) || 0,
   };
-}
-
-/** The graph wraps its payload as `{ status, jobId, result }`; unwrap to `result`. */
-function unwrapResult(payload: Record<string, unknown>): Record<string, unknown> {
-  const result = payload.result;
-  if (result && typeof result === "object") {
-    return result as Record<string, unknown>;
-  }
-  return payload;
-}
-
-/** Read an MCP tool result's JSON, from structured content or the text block. */
-function readToolPayload(toolResult: unknown): Record<string, unknown> {
-  const { content, structuredContent } = (toolResult ?? {}) as {
-    content?: unknown;
-    structuredContent?: unknown;
-  };
-  if (structuredContent && typeof structuredContent === "object") {
-    return structuredContent as Record<string, unknown>;
-  }
-  for (const block of Array.isArray(content) ? content : []) {
-    if (
-      block &&
-      typeof block === "object" &&
-      (block as { type?: unknown }).type === "text"
-    ) {
-      const { text } = block as { text?: unknown };
-      if (typeof text === "string") {
-        return JSON.parse(text) as Record<string, unknown>;
-      }
-    }
-  }
-  throw new Error("KINETK returned no readable content");
 }
 
 function asArray(value: unknown): unknown[] {

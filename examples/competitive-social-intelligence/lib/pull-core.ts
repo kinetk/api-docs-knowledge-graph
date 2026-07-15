@@ -32,20 +32,17 @@ interface RawPost {
   platform?: unknown;
   description?: unknown;
   publishedAt?: unknown;
-  // KINETK returns engagement metrics nested under `engagement`.
-  engagement?: {
-    views?: unknown;
-    likes?: unknown;
-    comments?: unknown;
-    shares?: unknown;
-  };
+  viewCount?: unknown;
+  likeCount?: unknown;
+  commentCount?: unknown;
+  shareCount?: unknown;
 }
 
 export interface InsightsResultRaw {
   content?: RawPost[];
   narratives?: unknown[];
+  tagInfo?: unknown[];
   tagSignals?: unknown[];
-  // Legacy count; the updated graph moved the analyzed total into `provenance`.
   recordCount?: number;
   provenance?: { recordsAnalyzed?: number };
 }
@@ -133,9 +130,9 @@ function toRankedTag(v: unknown): (WhitespaceTag & { score: number }) | null {
   if (typeof v !== "object" || v === null) return null;
   const { key, tag, engagementPremiumPct, opportunityScore, whitespaceScore } =
     v as Record<string, unknown>;
-  // The updated graph renamed the tag field `tag` -> `key` and replaced the
-  // `whitespaceScore` ranking with `opportunityScore` (the same "high premium,
-  // low saturation" measure). Fall back to the old names for older payloads.
+  // `tagInfo` names the tag `tag`; rank by `opportunityScore` (the "high premium,
+  // low saturation" measure that replaced the now-null `whitespaceScore`). The
+  // `key` / `whitespaceScore` fallbacks cover the retired MCP wrapper's shape.
   const name =
     typeof key === "string" ? key : typeof tag === "string" ? tag : null;
   if (name === null) return null;
@@ -170,10 +167,10 @@ export function shapeEntity(
   const step = weeks.boundaries[1] - weeks.boundaries[0];
 
   for (const c of content) {
-    const v = num(c.engagement?.views);
-    const l = num(c.engagement?.likes);
-    const cm = num(c.engagement?.comments);
-    const sh = num(c.engagement?.shares);
+    const v = num(c.viewCount);
+    const l = num(c.likeCount);
+    const cm = num(c.commentCount);
+    const sh = num(c.shareCount);
     views += v;
     likes += l;
     comments += cm;
@@ -201,7 +198,7 @@ export function shapeEntity(
     .sort((a, b) => b.count - a.count)
     .slice(0, MAX_NARRATIVES);
 
-  const whitespace = (result.tagSignals ?? [])
+  const whitespace = (result.tagInfo ?? result.tagSignals ?? [])
     .map(toRankedTag)
     .filter((x): x is WhitespaceTag & { score: number } => x !== null)
     .sort((a, b) => b.score - a.score)
@@ -216,8 +213,8 @@ export function shapeEntity(
       return {
         platform,
         description,
-        views: num(c.engagement?.views),
-        likes: num(c.engagement?.likes),
+        views: num(c.viewCount),
+        likes: num(c.likeCount),
       };
     })
     .filter((p): p is TopPost => p !== null)
