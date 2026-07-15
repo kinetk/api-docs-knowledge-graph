@@ -34,9 +34,9 @@ import type {
 const MCP_URL = process.env.KINETK_MCP_URL ?? "https://api.kinetk.ai/graph/mcp";
 
 // Insight pull parameters: trailing 30 days, structured output (no prose), and
-// the minimum record count the graph accepts.
+// the minimum analysis depth the graph accepts (the floor is 750).
 const WINDOW = "30d";
-const LIMIT = 500;
+const LIMIT = 750;
 const MAX_NARRATIVES = 4;
 const MAX_WHITESPACE = 5;
 
@@ -155,15 +155,17 @@ function toNarrative(value: unknown): Narrative | null {
 
 function toRankedTag(value: unknown): RankedTag | null {
   if (typeof value !== "object" || value === null) return null;
-  const { tag, engagementPremiumPct, whitespaceScore } = value as Record<
-    string,
-    unknown
-  >;
-  if (typeof tag !== "string") return null;
+  const { key, tag, engagementPremiumPct, opportunityScore, whitespaceScore } =
+    value as Record<string, unknown>;
+  // The updated graph renamed `tag` -> `key` and swapped `whitespaceScore` for
+  // `opportunityScore`; fall back to the old names for older payloads.
+  const name =
+    typeof key === "string" ? key : typeof tag === "string" ? tag : null;
+  if (name === null) return null;
   return {
-    tag,
+    tag: name,
     premiumPct: Math.round((Number(engagementPremiumPct) || 0) * 10) / 10,
-    score: Number(whitespaceScore) || 0,
+    score: Number(opportunityScore) || Number(whitespaceScore) || 0,
   };
 }
 

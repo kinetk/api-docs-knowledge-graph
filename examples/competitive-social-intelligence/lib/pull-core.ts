@@ -45,7 +45,9 @@ export interface InsightsResultRaw {
   content?: RawPost[];
   narratives?: unknown[];
   tagSignals?: unknown[];
+  // Legacy count; the updated graph moved the analyzed total into `provenance`.
   recordCount?: number;
+  provenance?: { recordsAnalyzed?: number };
 }
 
 const num = (v: unknown): number =>
@@ -129,15 +131,18 @@ function toNarrative(v: unknown): Narrative | null {
 
 function toRankedTag(v: unknown): (WhitespaceTag & { score: number }) | null {
   if (typeof v !== "object" || v === null) return null;
-  const { tag, engagementPremiumPct, whitespaceScore } = v as Record<
-    string,
-    unknown
-  >;
-  if (typeof tag !== "string") return null;
+  const { key, tag, engagementPremiumPct, opportunityScore, whitespaceScore } =
+    v as Record<string, unknown>;
+  // The updated graph renamed the tag field `tag` -> `key` and replaced the
+  // `whitespaceScore` ranking with `opportunityScore` (the same "high premium,
+  // low saturation" measure). Fall back to the old names for older payloads.
+  const name =
+    typeof key === "string" ? key : typeof tag === "string" ? tag : null;
+  if (name === null) return null;
   return {
-    tag,
+    tag: name,
     premiumPct: Math.round(num(engagementPremiumPct) * 10) / 10,
-    score: num(whitespaceScore),
+    score: num(opportunityScore) || num(whitespaceScore),
   };
 }
 
@@ -225,7 +230,13 @@ export function shapeEntity(
     color: subject.color,
     query: subject.query,
     metrics: {
-      records: num(result.recordCount) || content.length,
+      // Metrics are aggregated from `content`, so `records` tracks that sample
+      // (= the pull limit when returnRecords === limit). Fall back to the graph's
+      // analyzed total, then the legacy recordCount, if no records are inlined.
+      records:
+        content.length ||
+        num(result.provenance?.recordsAnalyzed) ||
+        num(result.recordCount),
       views,
       likes,
       comments,
