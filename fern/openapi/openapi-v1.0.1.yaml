@@ -54,46 +54,26 @@ servers:
 security:
   - ApiKeyAuth: []
 paths:
-  /.well-known/oauth-protected-resource:
-    get:
-      operationId: oauthMetadata
-      summary: OauthMetadata
-      security:
-        - ApiKeyAuth: []
-      responses:
-        "200":
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-          headers:
-            X-Kinetk-Credits-Used:
-              $ref: "#/components/headers/CreditsUsed"
-            X-Kinetk-Credits-Remaining:
-              $ref: "#/components/headers/CreditsRemaining"
-        default:
-          $ref: "#/components/responses/Error"
-  /connect:
-    post:
-      operationId: connect
-      summary: Mcp connect
-      security:
-        - ApiKeyAuth: []
-      responses:
-        "200":
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-          headers:
-            X-Kinetk-Credits-Used:
-              $ref: "#/components/headers/CreditsUsed"
-            X-Kinetk-Credits-Remaining:
-              $ref: "#/components/headers/CreditsRemaining"
-        default:
-          $ref: "#/components/responses/Error"
+  # /.well-known/oauth-protected-resource:
+  #   get:
+  #     operationId: oauthMetadata
+  #     summary: Oauth Metadata
+  #     security:
+  #       - ApiKeyAuth: []
+  #     responses:
+  #       "200":
+  #         description: Successful response
+  #         content:
+  #           application/json:
+  #             schema:
+  #               type: object
+  #         headers:
+  #           X-Kinetk-Credits-Used:
+  #             $ref: "#/components/headers/CreditsUsed"
+  #           X-Kinetk-Credits-Remaining:
+  #             $ref: "#/components/headers/CreditsRemaining"
+  #       default:
+  #         $ref: "#/components/responses/Error"
   /health:
     get:
       operationId: health
@@ -266,139 +246,19 @@ paths:
               $ref: "#/components/headers/CreditsRemaining"
         default:
           $ref: "#/components/responses/Error"
-  "/narratives/{id}":
-    get:
-      operationId: narrativeDetail
-      summary: Drill into one precomputed narrative
-      description: Full evidence bundle for one narrative cluster — header, content
-        rows, top creators, per-platform breakdown, duplicate groups.
+  /connect:
+    post:
+      operationId: connect
+      summary: Mcp connect
       security:
         - ApiKeyAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            minLength: 1
-            type: string
       responses:
         "200":
           description: Successful response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/INarrativeDetailResponse"
-          headers:
-            X-Kinetk-Credits-Used:
-              $ref: "#/components/headers/CreditsUsed"
-            X-Kinetk-Credits-Remaining:
-              $ref: "#/components/headers/CreditsRemaining"
-        default:
-          $ref: "#/components/responses/Error"
-  "/narratives/{id}/trajectory":
-    get:
-      operationId: narrativeTrajectory
-      summary: Narrative trajectory
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            minLength: 1
-            type: string
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/INarrativeTrajectoryResponse"
-          headers:
-            X-Kinetk-Credits-Used:
-              $ref: "#/components/headers/CreditsUsed"
-            X-Kinetk-Credits-Remaining:
-              $ref: "#/components/headers/CreditsRemaining"
-        default:
-          $ref: "#/components/responses/Error"
-  /narratives/search:
-    get:
-      operationId: narrativesSearch
-      summary: Filtered search over precomputed narratives
-      description: "Free-text search over precomputed narrative clusters, ranked by
-        relevance. For live retrieval, use `POST /intelligence/jobs` with `kind:
-        insights`."
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: q
-          in: query
-          required: true
-          schema:
-            minLength: 1
-            type: string
-        - name: window
-          in: query
-          required: false
-          schema:
-            enum:
-              - 30d
-              - 7d
-            type: string
-      responses:
-        "200":
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/INarrativeSearchResponse"
-          headers:
-            X-Kinetk-Credits-Used:
-              $ref: "#/components/headers/CreditsUsed"
-            X-Kinetk-Credits-Remaining:
-              $ref: "#/components/headers/CreditsRemaining"
-        default:
-          $ref: "#/components/responses/Error"
-  /narratives/trending:
-    get:
-      operationId: narrativesTrending
-      summary: Top precomputed narratives for a window
-      description: "Reads precomputed narrative clusters for a bounded window. For
-        live retrieval, submit `POST /intelligence/jobs` with `kind: insights`."
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: window
-          in: query
-          required: false
-          schema:
-            enum:
-              - 30d
-              - 7d
-            type: string
-      responses:
-        "200":
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ITrendingResponse"
+                type: object
           headers:
             X-Kinetk-Credits-Used:
               $ref: "#/components/headers/CreditsUsed"

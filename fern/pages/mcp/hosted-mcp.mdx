@@ -3,7 +3,7 @@
 
 Your AI assistant is great at reasoning, but it doesn't know what's trending on TikTok this morning, which creators are driving a narrative, or how a hashtag is performing across platforms. KINETK does.
 
-With one quick setup, you can connect KINETK to the AI assistant you already use (Claude, ChatGPT, Cursor, and others) and then just **ask in plain English**. Your assistant pulls live intelligence from the KINETK Knowledge Graph, does the heavy lifting behind the scenes, and answers you directly.
+With one quick setup, you can connect KINETK to the AI assistant you already use — Claude, ChatGPT, Cursor, and others. Once connected, just talk to your assistant in plain English, and **mention "kinetk"** when you want live intelligence.
 
 > *"What's trending in the World Cup right now?"*
 > *"Which creators are driving the luxury-watch conversation this month?"*
@@ -13,54 +13,141 @@ You ask. KINETK answers.
 
 ---
 
-## Ways to connect
+## Pick your assistant
 
-Pick the method your assistant supports — they all reach the same KINETK Knowledge Graph and bill the same account.
+Quick setup examples — choose the one you already use. They all reach the same KINETK Knowledge Graph and bill the same account.
 
-| Method | Best for | How you authenticate |
-|--------|----------|----------------------|
-| **Sign in (OAuth)** | **Claude Desktop**, ChatGPT | Click **Connect** → sign in with your KINETK login. No key to copy. |
-| **API key** | **Claude Code**, Cursor, **Gemini CLI**, scripts | Paste your KINETK `x-api-key`. |
-| **OAuth via your IdP** | **Gemini Enterprise** (Agentspace) | Register Gemini Enterprise as an OAuth client; admin setup. See [Gemini Enterprise](#gemini-enterprise-custom-mcp) below. |
+| Method | Assistants | How you authenticate |
+|--------|-----------|----------------------|
+| **Sign in (OAuth)** | **Claude Desktop**, **ChatGPT** | Paste the sign-in address, then sign in with your KINETK login. No key to copy. |
+| **API key** | **Claude Code**, **Codex**, **Cursor**, **Gemini/Antigravity**, **Grok** | Paste your KINETK `x-api-key`. |
+| **OAuth via your IdP** | **Gemini Enterprise** (Agentspace) | Admin setup through your identity provider. See [Gemini Enterprise](#gemini-enterprise-custom-mcp) below. |
 
-> ⚠️ Claude Desktop's "custom connector" only supports the **sign-in** method — it can't send an API-key header. Use the sign-in URL for Desktop, and the API-key URL for Claude Code / Cursor.
+> ⚠️ The sign-in method uses the **sign-in address** (`…/graph/connect`); the API-key method uses the **MCP address** (`…/graph/mcp`). Claude Desktop's custom connector can't send an API-key header — always use the sign-in address there.
 
-### Sign in — Claude Desktop / ChatGPT
+### Claude Desktop — Desktop App
+
+Add KINETK as a custom connector inside the Claude app.
 
 1. Open **Settings → Connectors → Add custom connector**.
-2. Paste the **sign-in address:** `https://api.kinetk.ai/graph/connect`
+2. Paste the sign-in address into the connector URL field: `https://api.kinetk.ai/graph/connect`
 3. Save, then click **Connect / Sign in** — a browser opens to the KINETK login. Sign in and approve.
 4. KINETK shows as connected, and the tools appear near the message box.
 
-No key, no config files — just sign in.
+### ChatGPT — Web App
 
-### API key — Claude Code / Cursor / Gemini CLI
+Add KINETK as an app inside ChatGPT on the web.
 
-Use the **API-key address:** `https://api.kinetk.ai/graph/mcp` with a header `x-api-key: YOUR_KEY`.
+1. Open ChatGPT on the web. This setup isn't available in the mobile or desktop apps, and requires a paid ChatGPT plan.
+2. Go to **Settings → Apps → Advanced settings** and turn **Developer mode** on.
+3. Click **Create App**, paste the sign-in address `https://api.kinetk.ai/graph/connect`, then click **Create**.
+4. Sign in with KINETK and the tools are ready.
 
-- **Claude Code** (one line):
-  ```
-  claude mcp add --transport http kinetk https://api.kinetk.ai/graph/mcp --header "x-api-key: YOUR_KEY"
-  ```
-- **Cursor:** Settings → MCP / Connectors → Add → paste the address, add the `x-api-key` header, refresh.
-- **Gemini CLI:** add an HTTP server to `~/.gemini/settings.json` (use the `httpUrl` + `headers` keys so the key rides along on every request):
-  ```json
-  {
-    "mcpServers": {
-      "kinetk": {
-        "httpUrl": "https://api.kinetk.ai/graph/mcp",
-        "headers": {
-          "x-api-key": "YOUR_KEY"
-        }
+### Claude Code — CLI
+
+Register the KINETK MCP server from your terminal.
+
+1. Run the command below, replacing `YOUR_KEY` with your KINETK API key.
+2. Restart Claude Code — the kinetk tools load automatically.
+
+```bash
+claude mcp add --transport http kinetk https://api.kinetk.ai/graph/mcp --header "x-api-key: YOUR_KEY"
+```
+
+### Codex — CLI
+
+Add the KINETK MCP server to your Codex config.
+
+1. Open `~/.codex/config.toml` on Linux/macOS (`$HOME/.codex/config.toml` on Windows).
+2. Add the config below to the bottom of the file.
+3. Replace the `API_KEY` placeholder with your KINETK API key.
+4. Start Codex and verify with the `/mcp` command.
+
+```toml
+[mcp_servers.kinetk]
+url = "https://api.kinetk.ai/graph/mcp"
+enabled = true
+startup_timeout_sec = 30
+
+[mcp_servers.kinetk.http_headers]
+"x-api-key" = "API_KEY"
+```
+
+### Cursor — IDE
+
+Add KINETK under Tools & MCPs in Cursor settings.
+
+1. Open **Settings → Tools & MCP → New MCP Server** or **Add Custom MCP**.
+2. Paste the JSON below into `mcp.json`.
+3. Change the `api-key` placeholder to your KINETK API key.
+4. Refresh — the kinetk tools become available.
+
+```json
+{
+  "mcpServers": {
+    "kinetk": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://api.kinetk.ai/graph/mcp",
+        "--header",
+        "x-api-key:${KINETK_KEY}"
+      ],
+      "env": {
+        "KINETK_KEY": "api-key"
       }
     }
   }
-  ```
-  Start a new `gemini` session, then run `/mcp list` to confirm `kinetk` is connected and `/tools` to see its tools.
+}
+```
 
-Need a key? Contact the KINETK team.
+### Gemini / Antigravity — CLI
 
-> **Note:** the consumer **Gemini app** (gemini.google.com / mobile) can't add custom MCP connectors yet — use the **Gemini CLI** above, or **Gemini Enterprise** below.
+Add the KINETK MCP server to your Gemini config.
+
+1. Open `~/.gemini/config/mcp_config.json` on macOS (`$HOME/.gemini/config/mcp_config.json` on Windows).
+2. Paste the JSON below into the file.
+3. Replace the `API_KEY` placeholder with your KINETK API key.
+4. Launch Antigravity (`agy`) and verify with the `/mcp` command.
+
+```json
+{
+  "mcpServers": {
+    "kinetk": {
+      "serverUrl": "https://api.kinetk.ai/graph/mcp",
+      "headers": {
+        "x-api-key": "API_KEY"
+      }
+    }
+  }
+}
+```
+
+> **Note:** the consumer **Gemini app** (gemini.google.com / mobile) can't add custom MCP connectors yet — use the config above, or **Gemini Enterprise** below.
+
+### Grok — CLI
+
+Register the KINETK MCP server from your terminal.
+
+1. Run the commands below for your OS, replacing `API_KEY` with your KINETK API key.
+2. Start Grok and verify with the `/mcp` command.
+
+**macOS / Linux:**
+
+```bash
+export KINETK_API_KEY="API_KEY"
+grok mcp add --transport http kinetk https://api.kinetk.ai/graph/mcp --header "x-api-key: ${KINETK_API_KEY}"
+```
+
+**Windows:**
+
+```powershell
+$env:KINETK_API_KEY="API_KEY"
+grok mcp add --transport http kinetk https://api.kinetk.ai/graph/mcp --header "x-api-key: $env:KINETK_API_KEY"
+```
+
+Need a key? Get one from the [platform portal](https://platform.kinetk.ai) or contact the KINETK team.
 
 ### Gemini Enterprise (custom MCP)
 
