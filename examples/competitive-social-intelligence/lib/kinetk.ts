@@ -100,7 +100,7 @@ export async function getJob(jobId: string, apiKey: string): Promise<JobState> {
 }
 
 const WINDOW: PullWindow = "30d";
-const LIMIT = 750;
+const LIMIT = 3000;
 const MAX_NARRATIVES = 4;
 const MAX_WHITESPACE = 5;
 
