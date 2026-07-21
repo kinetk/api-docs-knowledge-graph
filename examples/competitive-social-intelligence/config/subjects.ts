@@ -30,7 +30,7 @@ export interface TopicSubjects {
 export const TOPICS: Record<string, TopicSubjects> = {
   watches: {
     window: "30d",
-    limit: 2500,
+    limit: 3000,
     subjects: [
       { query: "Rolex watches", name: "Rolex", color: "#cba135" },
       { query: "Patek Philippe", color: "#4c8a6e" },

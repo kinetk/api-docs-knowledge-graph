@@ -1,10 +1,9 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ACTIVE_TOPIC, TOPICS } from "../config/subjects.ts";
+import { getJob, submitJob } from "../lib/kinetk.ts";
 import {
   computeWeekBuckets,
   shapeEntity,
@@ -12,98 +11,41 @@ import {
 } from "../lib/pull-core.ts";
 import type { Dataset, EntityData, Subject } from "../lib/types.ts";
 
-const MCP_URL = process.env.KINETK_MCP_URL ?? "https://api.kinetk.ai/graph/mcp";
 const POLL_INTERVAL_MS = 3000;
-const MAX_POLLS = 120; // ~6 minutes per job (insights jobs can run ~5 min)
-const CALL_OPTS = { timeout: 180_000, resetTimeoutOnProgress: true } as const;
+const MAX_POLLS = 120; // ~6 minutes per job (insights jobs can run several min)
 const MAX_RETRIES = 3;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 class JobFailedError extends Error {}
 
-async function connect(): Promise<Client> {
-  const client = new Client({
-    name: "social-intelligence-pull",
-    version: "1.0.0",
-  });
-  const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
-    requestInit: { headers: { "x-api-key": process.env.KINETK_API_KEY! } },
-  });
-  await client.connect(transport);
-  return client;
-}
-
-function readPayload(toolResult: unknown): Record<string, unknown> {
-  const { content, structuredContent } = (toolResult ?? {}) as {
-    content?: unknown;
-    structuredContent?: unknown;
-  };
-  if (structuredContent && typeof structuredContent === "object") {
-    return structuredContent as Record<string, unknown>;
-  }
-  for (const block of Array.isArray(content) ? content : []) {
-    if (
-      block &&
-      typeof block === "object" &&
-      (block as { type?: unknown }).type === "text"
-    ) {
-      const { text } = block as { text?: unknown };
-      if (typeof text === "string")
-        return JSON.parse(text) as Record<string, unknown>;
-    }
-  }
-  throw new Error("KINETK returned no readable content");
-}
-
 async function runInsightsJob(
-  client: Client,
   query: string,
   window: "7d" | "30d" | "all",
   limit: number,
+  apiKey: string,
 ): Promise<InsightsResultRaw> {
-  const submit = readPayload(
-    await client.callTool(
-      {
-        name: "create_context_job",
-        arguments: { kind: "insights", query, filters: { window }, limit },
-      },
-      undefined,
-      CALL_OPTS,
-    ),
+  // `returnRecords: limit` inlines every analyzed record in `content` so the
+  // dashboard's engagement metrics aggregate over the full sample.
+  const jobId = await submitJob(
+    "insights",
+    { query, window, limit, returnRecords: limit },
+    apiKey,
   );
-  const jobId = submit.jobId;
-  if (typeof jobId !== "string")
-    throw new Error("KINETK did not return a jobId");
 
   for (let i = 0; i < MAX_POLLS; i++) {
     await sleep(POLL_INTERVAL_MS);
-    const status = readPayload(
-      await client.callTool(
-        { name: "get_context_job_status", arguments: { jobId } },
-        undefined,
-        CALL_OPTS,
-      ),
-    );
-    if (status.status === "failed") {
-      const reason =
-        typeof status.error === "string" ? status.error : "unknown error";
-      throw new JobFailedError(`KINETK job failed for "${query}": ${reason}`);
+    const state = await getJob(jobId, apiKey);
+    if (state.status === "failed") {
+      throw new JobFailedError(
+        `KINETK job failed for "${query}": ${state.error}`,
+      );
     }
-    if (status.status === "completed" || status.status === "succeeded") break;
-    if (i === MAX_POLLS - 1)
-      throw new Error(`KINETK job timed out for "${query}"`);
+    if (state.status === "succeeded") {
+      return state.result as InsightsResultRaw;
+    }
   }
-
-  const done = readPayload(
-    await client.callTool(
-      { name: "get_context_job_result", arguments: { jobId, verbose: true } },
-      undefined,
-      CALL_OPTS,
-    ),
-  );
-  const result = (done.result ?? done) as InsightsResultRaw;
-  return result;
+  throw new Error(`KINETK job timed out for "${query}"`);
 }
 
 async function main() {
@@ -118,7 +60,8 @@ async function main() {
       `Unknown topic "${topic}". Known: ${Object.keys(TOPICS).join(", ")}`,
     );
   }
-  if (!process.env.KINETK_API_KEY) {
+  const apiKey = process.env.KINETK_API_KEY;
+  if (!apiKey) {
     throw new Error("KINETK_API_KEY is not set (expected via .env.local).");
   }
 
@@ -127,45 +70,35 @@ async function main() {
     `Pulling "${topic}": ${subjects.length} subjects, window=${window}, limit=${limit}`,
   );
 
-  let client = await connect();
   const done: { subject: Subject; result: InsightsResultRaw }[] = [];
   const failures: { subject: string; error: string }[] = [];
-  try {
-    for (const subject of subjects) {
-      const label = subject.name ?? subject.query;
-      process.stdout.write(`  - ${label} ... `);
 
-      let result: InsightsResultRaw | undefined;
-      let lastError = "unknown error";
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          result = await runInsightsJob(client, subject.query, window, limit);
-          break;
-        } catch (err) {
-          lastError = err instanceof Error ? err.message : String(err);
+  for (const subject of subjects) {
+    const label = subject.name ?? subject.query;
+    process.stdout.write(`  - ${label} ... `);
 
-          if (err instanceof JobFailedError || attempt === MAX_RETRIES) break;
-          process.stdout.write(`retry ${attempt} (${lastError}) ... `);
-          try {
-            await client.close();
-          } catch {
-            /* ignore */
-          }
-          await sleep(2000);
-          client = await connect();
-        }
-      }
+    let result: InsightsResultRaw | undefined;
+    let lastError = "unknown error";
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        result = await runInsightsJob(subject.query, window, limit, apiKey);
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
 
-      if (result) {
-        done.push({ subject, result });
-        console.log(`ok (${result.content?.length ?? 0} posts)`);
-      } else {
-        failures.push({ subject: label, error: lastError });
-        console.log(`FAILED (${lastError}) - skipping`);
+        if (err instanceof JobFailedError || attempt === MAX_RETRIES) break;
+        process.stdout.write(`retry ${attempt} (${lastError}) ... `);
+        await sleep(2000);
       }
     }
-  } finally {
-    await client.close();
+
+    if (result) {
+      done.push({ subject, result });
+      console.log(`ok (${result.content?.length ?? 0} posts)`);
+    } else {
+      failures.push({ subject: label, error: lastError });
+      console.log(`FAILED (${lastError}) - skipping`);
+    }
   }
 
   if (done.length === 0) {

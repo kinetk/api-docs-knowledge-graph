@@ -41,8 +41,10 @@ interface RawPost {
 export interface InsightsResultRaw {
   content?: RawPost[];
   narratives?: unknown[];
+  tagInfo?: unknown[];
   tagSignals?: unknown[];
   recordCount?: number;
+  provenance?: { recordsAnalyzed?: number };
 }
 
 const num = (v: unknown): number =>
@@ -126,15 +128,18 @@ function toNarrative(v: unknown): Narrative | null {
 
 function toRankedTag(v: unknown): (WhitespaceTag & { score: number }) | null {
   if (typeof v !== "object" || v === null) return null;
-  const { tag, engagementPremiumPct, whitespaceScore } = v as Record<
-    string,
-    unknown
-  >;
-  if (typeof tag !== "string") return null;
+  const { key, tag, engagementPremiumPct, opportunityScore, whitespaceScore } =
+    v as Record<string, unknown>;
+  // `tagInfo` names the tag `tag`; rank by `opportunityScore` (the "high premium,
+  // low saturation" measure that replaced the now-null `whitespaceScore`). The
+  // `key` / `whitespaceScore` fallbacks cover the retired MCP wrapper's shape.
+  const name =
+    typeof key === "string" ? key : typeof tag === "string" ? tag : null;
+  if (name === null) return null;
   return {
-    tag,
+    tag: name,
     premiumPct: Math.round(num(engagementPremiumPct) * 10) / 10,
-    score: num(whitespaceScore),
+    score: num(opportunityScore) || num(whitespaceScore),
   };
 }
 
@@ -193,7 +198,7 @@ export function shapeEntity(
     .sort((a, b) => b.count - a.count)
     .slice(0, MAX_NARRATIVES);
 
-  const whitespace = (result.tagSignals ?? [])
+  const whitespace = (result.tagInfo ?? result.tagSignals ?? [])
     .map(toRankedTag)
     .filter((x): x is WhitespaceTag & { score: number } => x !== null)
     .sort((a, b) => b.score - a.score)
@@ -222,7 +227,13 @@ export function shapeEntity(
     color: subject.color,
     query: subject.query,
     metrics: {
-      records: num(result.recordCount) || content.length,
+      // Metrics are aggregated from `content`, so `records` tracks that sample
+      // (= the pull limit when returnRecords === limit). Fall back to the graph's
+      // analyzed total, then the legacy recordCount, if no records are inlined.
+      records:
+        content.length ||
+        num(result.provenance?.recordsAnalyzed) ||
+        num(result.recordCount),
       views,
       likes,
       comments,
