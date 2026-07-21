@@ -1,0 +1,43 @@
+tabs:
+  docs:
+    display-name: Documentation
+    icon: book
+  api:
+    display-name: API Reference
+    icon: code
+
+navigation:
+  - tab: docs
+    layout:
+      - section: Get Started
+        contents:
+          - page: Introduction
+            path: ../pages/introduction.mdx
+          - page: Authentication
+            path: ../pages/getting-started/authentication.mdx
+          - page: Quickstart
+            path: ../pages/getting-started/quickstart.mdx
+      - section: Guides
+        contents:
+          - page: The Content Object
+            path: ../pages/guides/content-object.mdx
+          - page: Narrative Intelligence
+            path: ../pages/guides/narrative-intelligence.mdx
+          - page: Intelligence Jobs
+            path: ../pages/guides/intelligence-jobs.mdx
+          - page: Sync & Freshness
+            path: ../pages/guides/sync-and-freshness.mdx
+      - section: MCP Server
+        contents:
+          - page: Overview
+            path: ../pages/mcp/overview.mdx
+          - page: Hosted MCP
+            path: ../pages/mcp/hosted-mcp.mdx
+          - page: Installation
+            path: ../pages/mcp/installation.mdx
+          - page: Tools
+            path: ../pages/mcp/tools.mdx
+  - tab: api
+    layout:
+      - api: API Reference
+        api-name: v1.0.0
