@@ -25,7 +25,7 @@ info:
     request. Keys are issued from the billing dashboard and shown only once.
 
 
-    Billing: async intelligence jobs are metered in credits (1 credit = $1.00).
+    Billing: async intelligence jobs are metered in credits (1 credit = $2.00).
 
     `POST /intelligence/jobs` requires an explicit `window` and returns an
 
