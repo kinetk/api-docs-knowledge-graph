@@ -154,17 +154,19 @@ paths:
         discriminated by `kind`.
 
 
-        Use `kind: stats` for completed engagement totals over the canonical-
+        Use `kind: stats` for exact engagement totals over every record matching
 
-        deduplicated `retrieved_rule_union`: exhaustive current-schema PostgreSQL
+        the query. Matches come from indexed tags, text, themes and products plus
 
-        indexed matches plus frontier-certified semantic seed UUIDs. The top 20
+        semantically similar content; the semantic matches help find the right
 
-        semantic records discover clean terms; they do not cap the PostgreSQL
+        terms but never cap the count, though semantic discovery is bounded, so a
 
-        result count. Incomplete discovery or reconciliation fails the job instead
+        very large topic can return a floor rather than the full population.
 
-        of returning sampled or partial totals. Stats jobs cost a flat $5.00 per
+        Incomplete discovery or reconciliation fails the job instead of returning
+
+        sampled or partial totals. Stats jobs cost a flat $5.00 per
 
         call, expose `24h` publicly, and may omit `window` (defaults to `all`).
 
