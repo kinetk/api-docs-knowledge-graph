@@ -12,31 +12,31 @@ navigation:
       - section: Get Started
         contents:
           - page: Introduction
-            path: ../pages/introduction.mdx
+            path: ../pages/v1.0.0/introduction.mdx
           - page: Authentication
-            path: ../pages/getting-started/authentication.mdx
+            path: ../pages/v1.0.0/getting-started/authentication.mdx
           - page: Quickstart
-            path: ../pages/getting-started/quickstart.mdx
+            path: ../pages/v1.0.0/getting-started/quickstart.mdx
       - section: Guides
         contents:
           - page: The Content Object
-            path: ../pages/guides/content-object.mdx
+            path: ../pages/v1.0.0/guides/content-object.mdx
           - page: Narrative Intelligence
-            path: ../pages/guides/narrative-intelligence.mdx
+            path: ../pages/v1.0.0/guides/narrative-intelligence.mdx
           - page: Intelligence Jobs
-            path: ../pages/guides/intelligence-jobs.mdx
+            path: ../pages/v1.0.0/guides/intelligence-jobs.mdx
           - page: Sync & Freshness
-            path: ../pages/guides/sync-and-freshness.mdx
+            path: ../pages/v1.0.0/guides/sync-and-freshness.mdx
       - section: MCP Server
         contents:
           - page: Overview
-            path: ../pages/mcp/overview.mdx
+            path: ../pages/v1.0.0/mcp/overview.mdx
           - page: Hosted MCP
-            path: ../pages/mcp/hosted-mcp.mdx
+            path: ../pages/v1.0.0/mcp/hosted-mcp.mdx
           - page: Installation
-            path: ../pages/mcp/installation.mdx
+            path: ../pages/v1.0.0/mcp/installation.mdx
           - page: Tools
-            path: ../pages/mcp/tools.mdx
+            path: ../pages/v1.0.0/mcp/tools.mdx
   - tab: api
     layout:
       - api: API Reference

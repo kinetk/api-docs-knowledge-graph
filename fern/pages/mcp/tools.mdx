@@ -1,147 +1,75 @@
 ---
 title: MCP Tools
-description: The three tools exposed by kinetk-mcp — signatures, inputs, examples.
+description: Every tool the hosted kinetk MCP exposes — what it does, what it takes, and which API call it maps to.
 ---
 
-The `kinetk` MCP exposes three tools that map to the async-job lifecycle.
+The [hosted MCP](./hosted-mcp.mdx) exposes the KINETK graph as tools in four groups. Tool names carry a `kinetk_` prefix so they never collide with other servers you have connected.
 
-## `create_context_job`
+You rarely call these yourself — your assistant picks them. Mention **kinetk** in your prompt so it knows to.
 
-Submit an async job. Pick `kind` by **what you want back**:
+## Context jobs — live retrieval and analysis
 
-| `kind` | Needs | Returns — use when |
+These run the async [intelligence jobs](../guides/intelligence-jobs.mdx) and are billed like them.
+
+| Tool | Does | Maps to |
 |---|---|---|
-| `records` | `query` + `limit` | The matching **content itself** — ranked posts/videos with platform, tags, engagement, similarity. Use when you want source material to read or cite. |
-| `insights` | `query` (only) | **Synthesized insight signals only** — LLM-written arbitrage takeaways (overall, tag-focused, narrative-focused). No raw content. Use when you want the analytical "so what". _The API accepts only `query` for this kind — any filters/options you pass are dropped client-side before submit._ |
+| `kinetk_get_context` | **The default.** Submits a job *and waits for it* (about 24 seconds), returning the result inline. If the job is still running it returns `{ status: "pending", jobId }` — keep polling with the status tool. | `POST` + `GET /intelligence/jobs` |
+| `kinetk_create_context_job` | Submits a job and returns a `jobId` without waiting. For slow jobs (`window: "all"`, large pulls) or fire-and-forget. | `POST /intelligence/jobs` |
+| `kinetk_get_context_job_status` | Cheap status poll: `queued`, `running`, `completed` or `failed`. | `GET /intelligence/jobs/{id}` |
+| `kinetk_get_context_job_result` | Fetches a finished job's result — a slim, token-efficient envelope by default, or the full payload with `verbose: true`. | `GET /intelligence/jobs/{id}` |
 
-**Rule of thumb:** a `query` → `records` (the content) or `insights` (the synthesized analysis).
+The job tools take a `kind`:
 
-### Input
+| `kind` | Inputs | Returns |
+|---|---|---|
+| `records` | `query`, `limit` (required); `window`, `platforms` | The matching posts and videos, ranked. |
+| `insights` | `query` (required); `window`, `limit`, `includeSignals`, `returnRecords`, `includeGraphs`, `platforms` | Narratives with trajectory and sentiment, tag and theme signals; written takeaways with `includeSignals`. |
 
-- `records` and `insights` require `query` (string).
-- `records` also requires `limit` (integer, 100–10000) — how many records to retrieve. Jobs are billed per record, so there is **no default**: you choose the spend (`1000` is a sensible starting point). A limit above `10000` is rejected with a 400. `insights` does not accept `limit` (its scan size is server-fixed).
+Through the MCP, `limit` must be **750–10,000** — smaller pulls rarely give useful intelligence, so the tools reject them. For visual questions use `kinetk_search_patterns` below, which runs a `patterns` job.
 
-Filters apply to the `records` kind. `insights` takes **only** `query` — its time window, scan size and platforms are managed by the service, and the MCP drops any filters/options before submit so the call still succeeds.
+`window` defaults to `all` when omitted. Jobs commonly take 1–3 minutes on `window: "all"` or large pulls — a long `running` is normal, not stuck. Results too large to return inline come back as `{ resultStorage: "s3", resultUrl }`.
 
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `platforms` | `string[]` | all | E.g. `["TIKTOK", "INSTAGRAM"]` |
-| `limit` | `number` | (required) | How many records to retrieve, 100–10000. Sent to the backend as-is — never defaulted by the MCP, because jobs are billed per record and the caller chooses the spend. |
-| `window` | `"7d" \| "30d" \| "all"` | `"all"` (set by the MCP) | Time filter on `published_at`. The API **requires** an explicit window for these kinds; when you omit it, the MCP sends `"all"` (no time filter). |
+## Narratives — the precomputed narrative map
 
-### Returns
+Free, instant reads; no job, no polling.
 
-```json
-{
-  "jobId": "0190bd6f-1234-7abc-8def-9876543210ab",
-  "kind": "insights",
-  "status": "queued",
-  "fromCache": false
-}
-```
+| Tool | Does | Maps to |
+|---|---|---|
+| `kinetk_trending_narratives` | The top narratives for `7d` or `30d`. | `GET /narratives/trending` |
+| `kinetk_search_narratives` | Narratives whose name or tags match a `query`. | `GET /narratives/search` |
+| `kinetk_get_narrative` | One narrative's posts, top creators and platform split, by `id`. | `GET /narratives/{id}` |
+| `kinetk_get_narrative_trajectory` | One narrative's metric history, newest first — is it accelerating or fading? | `GET /narratives/{id}/trajectory` |
 
-If the backend has a fresh cached run for this input, `status` is `succeeded` and `fromCache: true` — `get_context_job_result` returns in O(1) on the next call.
+Narrative ids come from trending, search, or an `insights` result.
 
-### Example agent prompt
+## Patterns — the visual pattern map
 
-> Use kinetk to submit an `insights` job for `luxury watch culture 2026`.
+| Tool | Does | Maps to |
+|---|---|---|
+| `kinetk_search_patterns` | **Start here for visual questions.** Finds the patterns that match a question, with their recurring elements and lookalikes. | `patterns` job |
+| `kinetk_list_patterns` | Browses the map, optionally filtered by `elementType` + `elementValue` (both together). | `GET /intelligence/patterns` |
+| `kinetk_get_pattern` | One pattern's full evidence by `patternKey`: elements, counts, growth, trajectory. | `GET /intelligence/patterns/{patternKey}` |
+| `kinetk_get_pattern_content` | The posts inside a pattern, most representative first. | `GET /intelligence/patterns/{patternKey}/content` |
+| `kinetk_get_pattern_neighbors` | Patterns that **look alike despite different tags** — the non-obvious connections. | `GET /intelligence/patterns/{patternKey}/lookalikes` |
 
-## `get_context_job_status`
+`kinetk_search_patterns` runs a `patterns` job ($10.00); the other pattern tools are free reads.
 
-Cheap poll. Pass the `jobId` you got from `create_context_job`.
+## Search and fetch — for ChatGPT deep research
 
-### Returns
+| Tool | Does |
+|---|---|
+| `search` | Finds content matching a query and returns lightweight results `{ id, title, url }`. Runs a 100-record `records` job (`window: "all"`), so it costs up to $1.00 per call. |
+| `fetch` | Returns one result's full text and metadata by its `id`. |
 
-```jsonc
-// running
-{ "jobId": "...", "kind": "insights", "status": "running",
-  "submittedAt": 1745859300000, "startedAt": 1745859302100 }
+ChatGPT's deep-research mode requires exactly these two names, so they are the only tools without the `kinetk_` prefix. Other assistants can ignore them.
 
-// completed
-{ "jobId": "...", "kind": "insights", "status": "completed",
-  "submittedAt": ..., "startedAt": ..., "completedAt": 1745859315400 }
+## Example prompts
 
-// failed
-{ "jobId": "...", "status": "failed",
-  "error": "embedding service failed (403): permission denied",
-  "submittedAt": ..., "startedAt": ..., "completedAt": ... }
-```
+- *"Use kinetk to show what's trending in fitness this week, then drill into the top narrative."* → `kinetk_trending_narratives`, then `kinetk_get_narrative`.
+- *"Use kinetk to analyze the luxury watch conversation over the last 30 days, with written takeaways."* → `kinetk_get_context` with `kind: "insights"`, `window: "30d"`, `includeSignals: true`.
+- *"With kinetk, find what cozy home office content looks like and what it's visually related to."* → `kinetk_search_patterns`, then `kinetk_get_pattern_neighbors`.
+- *"Pull 1,000 recent posts about sustainable sneakers from kinetk so I can cite them."* → `kinetk_get_context` with `kind: "records"`, `limit: 1000`.
 
-Status values: `queued | running | completed | failed`. Latency: ~300 ms — safe to poll every 2–5 seconds.
+## Privacy
 
-## `get_context_job_result`
-
-Fetch the result. Defaults to the **slim envelope** (token-efficient).
-
-### Inputs
-
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `jobId` | string | (required) | From `create_context_job` |
-| `verbose` | boolean | `false` | If `true`, returns the full untouched graph-service payload |
-
-### Returns (slim envelope)
-
-The envelope shape depends on `kind`:
-
-```jsonc
-// records → the matching content items
-{
-  "jobId": "...", "kind": "records", "status": "completed",
-  "items": [
-    {
-      "id": "uuid",
-      "platform": "TIKTOK",
-      "title": "...",
-      "description": "...",
-      "tags": ["smartwatch", "fitness"],
-      "similarity": 0.81,
-      "engagement": { "views": 12500, "likes": 800, "shares": 40, "comments": 60 },
-      "publishedAt": "2026-05-01T12:00:00.000Z",
-      "creator": { "followerCount": 120000 }
-    }
-  ]
-}
-
-// insights → insight signals only (no raw content)
-{
-  "jobId": "...", "kind": "insights", "status": "completed",
-  "query": "...",
-  "insights": ["..."],
-  "tagInsights": ["..."],
-  "narrativeInsights": ["..."]
-}
-```
-
-Creator identity (handle/display name) and source URLs are never returned; a
-creator carries only a non-identifying `followerCount`.
-
-### Returns (verbose)
-
-Set `verbose: true` for the full untouched graph-service payload for the kind —
-see the [API Reference](/api-reference) for the complete response shapes.
-
-### Pending behavior
-
-If the job is still `queued` or `running` when called, returns `{ "status": "pending" }` instead of erroring. Useful for agents that want to call `get_context_job_result` directly and back off on pending without a separate status check.
-
-### Expired
-
-If the job's TTL has passed (~24 h after completion), the API's `410` surfaces as a failed envelope (the API no longer reports the kind at that point):
-
-```json
-{ "jobId": "...", "kind": "unknown", "status": "failed", "error": "job result expired" }
-```
-
-Resubmit via `create_context_job` to recompute.
-
-## Putting it together
-
-A typical agent loop for `insights`:
-
-1. `create_context_job({ kind: "insights", query: "..." })` → `jobId`.
-2. If `fromCache: true`, jump to step 4.
-3. `get_context_job_status({ jobId })` every 3 s until `status: "completed"` (or `"failed"`).
-4. `get_context_job_result({ jobId })` → slim envelope. Pass `verbose: true` for the full untouched payload (more tokens).
-
-Most agents handle this entirely autonomously once you cue them with "use kinetk."
+Creator handles, display names and platform-native ids are never returned. A creator is represented by a numeric id and a `followerCount`.

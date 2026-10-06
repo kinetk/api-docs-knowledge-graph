@@ -1,9 +1,9 @@
 ---
 title: The content object
-description: The ranked content item returned by records and search — its signals and exactly how items are scored.
+description: The ranked content item returned by records — its signals and exactly how items are scored.
 ---
 
-`records` jobs and `POST /search` return a `content` array of ranked items — the same object in both. (Search rows also carry `narrativeIds` and `patternKeys`; see [Search](./search.mdx).) Each item carries the source metadata (platform, title, tags, engagement counts, `publishedAt`, `creatorId`, …) plus a set of **normalized signals** and a single **ranking score** the list is sorted by.
+`records` returns a `content` array of ranked items. Each item carries the source metadata (platform, title, tags, engagement counts, `publishedAt`, `creatorId`, …) plus a set of **normalized signals** and a single **ranking score** the list is sorted by.
 
 Every signal is normalized **within the result set** for that query — values are relative to the other items returned, not absolute.
 

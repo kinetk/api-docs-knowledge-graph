@@ -1,0 +1,127 @@
+---
+title: Search
+description: POST /search — one synchronous call that returns ranked content plus the narratives and creators it belongs to.
+---
+
+`POST /search` is the call to make many times per task. In a few seconds it runs one bounded, live retrieval over the corpus and returns:
+
+- **`content`** — ranked posts and videos matching your query,
+- **`narratives`** — the narratives those posts belong to,
+- **`patterns`** — matching visual patterns from the pattern map,
+- **`creators`** — who authored the returned posts,
+
+with ids you can pass straight to the detail endpoints. For thousands of rows or a full analysis, submit an [intelligence job](./intelligence-jobs.mdx) instead.
+
+## Request
+
+```bash
+curl -X POST "$API_BASE/search" \
+  -H "x-api-key: $API_KEY" \
+  -H "content-type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "query": "sneaker drops",
+    "window": "7d",
+    "limit": 20
+  }'
+```
+
+| Field | Default | Rules |
+|---|---|---|
+| `query` | required | Free text. |
+| `window` | `30d` | `7d`, `30d` or `all`. |
+| `platforms` | all | Any of `tiktok`, `instagram`, `reddit`, `pinterest`, `x`, `snapchat` — case-insensitive. Anything else → `400`. |
+| `types` | all four | Any subset of `content`, `narratives`, `patterns`, `creators`. `creators` needs `content` (creators are aggregated from the content rows). |
+| `limit` | `100` | 1–300. Caps `content` and `creators`. Above 300 → `400`: use a `records` job. |
+
+Validation is strict: an unknown field, a wrong type or an out-of-range value returns `400`.
+
+## Response
+
+```json
+{
+  "query": "sneaker drops",
+  "window": "7d",
+  "request_id": "9c1e2f4a-…",
+  "content": [
+    { "uuid": "…", "platform": "TIKTOK", "title": "…", "relevance": 0.83, "narrativeIds": ["4182"], "patternKeys": ["pat_…"] }
+  ],
+  "narratives": [
+    { "id": "4182", "label": "Limited sneaker drop hype", "source": "tracked", "content_count": 1240, "memberOverlap": 6 }
+  ],
+  "patterns": [],
+  "creators": [ { "creatorId": 1234, "platform": "TIKTOK", "hits": 3, "followerCount": 120000 } ],
+  "usage": { "credits": 0.2 },
+  "response_time_ms": 2140
+}
+```
+
+### `content`
+
+Up to `limit` ranked rows — the same content object a `records` job returns (see [The Content Object](./content-object.mdx)). Each row also carries:
+
+- `narrativeIds` — the precomputed narratives it belongs to → `GET /narratives/{id}`.
+- `patternKeys` — the visual patterns it belongs to → `GET /intelligence/patterns/{patternKey}`.
+
+### `narratives`
+
+Up to 10 narratives related to the query. Each says where it came from in `source`:
+
+- **`tracked`** — a precomputed narrative. Its `id` resolves through `GET /narratives/{id}`, where its history lives. `content_count` is the narrative's **total size in the corpus**, not the number of rows in this response; `memberOverlap` is how many of the retrieved rows belong to it.
+- **`emergent`** — formed on the spot from this query's own results, because the precomputed map doesn't cover everything. Its `id` is only valid within this response and does not resolve through `GET /narratives/{id}`. `content_count` is the number of retrieved rows in it.
+
+Narratives are only returned when the evidence supports them — an off-topic query gets `[]` rather than whatever happens to be large. The list is never padded with trending narratives.
+
+### `patterns`
+
+<Callout intent="info">
+  The `patterns` list on `POST /search` is temporarily switched off and returns `[]`. Content rows still carry their `patternKeys`, and the [pattern endpoints](./pattern-intelligence.mdx) work as normal.
+</Callout>
+
+### `creators`
+
+Who authored the returned rows: a numeric `creatorId`, `platform`, `hits` (rows they authored) and `followerCount` (`null` when unknown), sorted by hits, then reach. Creator handles are never exposed.
+
+### Best-effort arms
+
+`narratives`, `patterns` and `creators` are best-effort: when nothing matches, or that part of the search runs out of time, it comes back empty and the rest of the answer is unaffected. A search is answered by its `content`.
+
+## Pricing
+
+- **$0.010 per content row returned** — the same as a `records` record — when `types` includes `content`.
+- **Free** when it doesn't: `types: ["narratives"]` costs nothing.
+- The hold is `limit` × $0.010; you're charged only for the rows that come back, and an empty answer costs nothing.
+- `usage.credits` and the `X-Kinetk-Credits-Used` header report what the call cost.
+
+See [Pricing & Credits](../getting-started/pricing.mdx).
+
+## Retries and idempotency
+
+Send an `Idempotency-Key` header with a unique value per logical request. A retry with the same key and body within 15 minutes runs again but is not charged a second time (`usage.credits: 0`). Without the header, every call is billed.
+
+## When a search takes too long — `202`
+
+A search has a time budget of about 20 seconds. When the content retrieval runs past it, the search charge is refunded and the same question is submitted as an `insights` job (100 records, no `includeSignals`) at that kind's own price:
+
+```json
+{
+  "request_id": "9c1e2f4a-…",
+  "jobId": "01931f7e-…",
+  "status": "queued",
+  "statusUrl": "/intelligence/jobs/01931f7e-…",
+  "estimated_cost": 1.5,
+  "reason": "sync_budget_exceeded"
+}
+```
+
+Poll `statusUrl` as for any [job](./intelligence-jobs.mdx). Cold starts and `window: "all"` make this more likely; a smaller `limit` makes it less likely.
+
+## Errors
+
+| Status | Cause |
+|---|---|
+| `400` | Bad `window`, `limit`, `types` or `platforms`, an unknown field, or an empty body. |
+| `402` | Not enough credits for the hold — the body says the largest `limit` you can afford. |
+| `403` | Missing or wrong API key, or a suspended account. |
+| `429` | Rate limited — back off and retry. |
+| `5xx` | The retrieval failed. Nothing was charged; retry. |

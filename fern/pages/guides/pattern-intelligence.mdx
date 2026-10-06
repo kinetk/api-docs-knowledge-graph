@@ -1,0 +1,96 @@
+---
+title: Pattern Intelligence
+description: The multimodal pattern map — recurring visual patterns across the corpus, and how to walk between them.
+---
+
+A **pattern** is a group of posts that *look and feel* alike. Patterns are discovered from image and video embeddings rather than from tags, so they capture what content actually shows — a recurring aesthetic, product shot, format or visual community — even when creators tag it differently.
+
+Each pattern carries its **recurrent elements** (the themes, aesthetics, emotions, products and visual communities its posts share, with how many posts carry each), how many posts and creators back it, and how it has grown across rebuilds.
+
+The map is rebuilt weekly and topped up every 48 hours. It covers the corpus's recent history as a whole, so the pattern reads take **no `window`**.
+
+## Two ways in
+
+| | Endpoint | Speed | Cost |
+|---|---|---|---|
+| **Browse and traverse** the map | `GET /intelligence/patterns/*` | under 2 s | free |
+| **Match a question** to the map, with a written summary | `patterns` job via `POST /intelligence/jobs` | async | $10.00 flat |
+
+## Browse the map
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/patterns?limit=25"
+```
+
+Returns `{ generation, patterns[] }`. Each pattern has a `patternKey` (`pat_…`), `label`, `summary`, `contentCount`, `creatorCount`, `platformCount`, `totalEngagement`, `confidence` and `firstSeenAt`. `labelSource` says whether the name is an LLM-written label (`llm`) or a deterministic one built from its elements (`deterministic`).
+
+Filter by a recurrent element by passing **both** `elementType` and `elementValue`:
+
+```bash
+curl -H "x-api-key: $API_KEY" \
+  "$API_BASE/intelligence/patterns?elementType=aesthetic&elementValue=minimalist"
+```
+
+`elementType` is one of `theme`, `aesthetic`, `emotion`, `product`, `visual_community`. Passing one without the other returns `400`.
+
+## One pattern
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/patterns/pat_…"
+```
+
+Everything in the list, plus:
+
+- `recurrentElements[]` — `{ type, value, support }`, where `support` is the number of member posts carrying that element.
+- `earlyCount`, `lateCount`, `lateShare` — how the pattern's posts split between the early and late part of its window. A rising `lateShare` means it is growing.
+- `trajectory[]` — its post and creator counts in each previous rebuild.
+- `medoidContentUuids[]` — the representative posts its label was drawn from.
+
+`patternKey` is stable across rebuilds, so you can store it and come back later.
+
+## The posts in a pattern
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/patterns/pat_…/content?limit=25"
+```
+
+The member posts, most representative first: `contentUuid`, `title`, `description`, `platform`, `contentUrl`, `publishedAt`, `engagement`, `isRepresentative`, and `centroidSimilarity` — how close the post is to the pattern's visual centre (`null` when it joined the pattern through shared tags rather than visual similarity).
+
+## Lookalikes — the interesting hop
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/patterns/pat_…/lookalikes?limit=10"
+```
+
+Patterns that **look alike but are tagged differently**. Each neighbour carries:
+
+- `centroidCosine` — how visually similar the two patterns are,
+- `tagJaccard` — how much their tags overlap. **Low** overlap with high visual similarity is what makes a pair interesting,
+- `sharedElements` — the recurrent elements they actually share, with support on both sides,
+- `corroborationCount` — how many post-to-post similarity links back the connection.
+
+This is how you find connections keyword search never surfaces: two communities making the same kind of content under different names.
+
+## Match a question — the `patterns` job
+
+When you have a question rather than a pattern to start from, submit a `patterns` job. It matches the query against the whole map and returns the relevant patterns with their elements, representative posts, lookalikes and a grounded written summary.
+
+```bash
+curl -X POST "$API_BASE/intelligence/jobs" \
+  -H "x-api-key: $API_KEY" -H "content-type: application/json" \
+  -d '{ "kind": "patterns", "input": { "query": "cozy home office setups", "limit": 8 } }'
+```
+
+| Input | Default | Notes |
+|---|---|---|
+| `query` | required | Free text. |
+| `limit` | 8 | Maximum patterns to return, up to 25. |
+| `includeProse` | `true` | `false` skips the written summary and returns the evidence only. |
+
+The result has `patterns[]` — each with the full pattern detail, a `queryRelevance` score (what the ordering uses), `representativeContent[]` and `lookalikes[]` — plus a `narrative` summary and `provenance` (`patternsInMap`, `patternsMatched`, `mapAvailable`). A query that matches nothing returns `patterns: []`.
+
+**Pricing:** $10.00 flat per call, however many patterns come back. Results are cached until the next 00:00 UTC, and re-reading an answer your own account paid for that day is free.
+
+## Patterns vs narratives
+
+[Narratives](./narrative-intelligence.mdx) group content by **community conversation** — shared topics, tags and how they trend. Patterns group content by **what it looks like**. Use narratives to follow what people are talking about and how fast it moves; use patterns to understand recurring visual formats and how visually-related topics connect.

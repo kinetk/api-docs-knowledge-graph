@@ -9,15 +9,13 @@ info:
   description: >
     Public HTTP API for the KINETK graph-service. Health/sync probe,
 
-    precomputed narrative reads, and an async job queue for heavy
+    precomputed narrative reads, a synchronous `POST /search` for agents in a
+
+    loop, and an async job queue for query statistics and other heavy
 
     intelligence work (`records`, `insights`,
 
-    `campaign`). The legacy kind names (intelligence_records /
-
-    intelligence_signals / campaign_brief / llm_context) are still accepted as
-
-    deprecated aliases.
+    `patterns`, `stats`).
 
 
     Authentication: send your secret key in the `x-api-key` header on every
@@ -25,25 +23,47 @@ info:
     request. Keys are issued from the billing dashboard and shown only once.
 
 
-    Billing: async intelligence jobs are metered in credits (1 credit = $2.00).
+    Billing: calls are metered in credits (1 credit = $1.00). `POST /search`
 
-    `POST /intelligence/jobs` requires an explicit `window` and returns an
+    costs $0.010 per content row returned — the same as a `records` record —
 
-    `estimated_cost` — an UPPER BOUND. Pricing is dynamic: you are charged the
+    when its `content` arm runs and is free otherwise, charged only on a `200`. Async intelligence jobs:
 
-    ACTUAL cost once the job completes (a query that returns fewer records than
+    `records` costs $0.010 per record and `insights` $0.015 per record, both
 
-    `limit` costs less), and the unused remainder of the reservation is released.
+    charged on the records actually returned/analyzed; `patterns` is a flat
+
+    $10.00 per call and `stats` a flat $5.00 per call, whatever the query asks
+
+    for. `includeSignals` adds a flat $1.00 to an insights call. Price never
+
+    depends on the `window` you query.
+
+
+    `POST /intelligence/jobs` returns an `estimated_cost`, an UPPER BOUND for the
+
+    per-record kinds: you are charged the ACTUAL cost once the job completes and
+
+    the unused remainder of the reservation is released. The flat-fee kinds settle
+
+    at their fee even when the answer is empty — only a FAILED job is refunded.
 
     If your balance can't cover a call you get `402` with a recommendation for how
 
     to fit your remaining budget. Every successful response carries
 
-    `X-Kinetk-Credits-Used` and `X-Kinetk-Credits-Remaining` headers. Precomputed
+    `X-Kinetk-Credits-Used` and `X-Kinetk-Credits-Remaining` headers.
 
-    narrative/creator reads are free in V1. Cached job answers are charged at the
 
-    full rate (no cache discount).
+    Cached answers: `records` and `insights` cache-hits are charged at the full
+
+    rate (no cache discount). `patterns` and `stats` answers are cached until the
+
+    next 00:00 UTC, and re-reading one you already paid for is free until then;
+
+    a different account asking the same question pays the full fee. Precomputed
+
+    narrative/creator reads are free.
   contact:
     name: KINETK Engineering
   license:
@@ -54,26 +74,46 @@ servers:
 security:
   - ApiKeyAuth: []
 paths:
-  # /.well-known/oauth-protected-resource:
-  #   get:
-  #     operationId: oauthMetadata
-  #     summary: Oauth Metadata
-  #     security:
-  #       - ApiKeyAuth: []
-  #     responses:
-  #       "200":
-  #         description: Successful response
-  #         content:
-  #           application/json:
-  #             schema:
-  #               type: object
-  #         headers:
-  #           X-Kinetk-Credits-Used:
-  #             $ref: "#/components/headers/CreditsUsed"
-  #           X-Kinetk-Credits-Remaining:
-  #             $ref: "#/components/headers/CreditsRemaining"
-  #       default:
-  #         $ref: "#/components/responses/Error"
+  /.well-known/oauth-protected-resource:
+    get:
+      operationId: oauthMetadata
+      summary: OauthMetadata
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
+  /connect:
+    post:
+      operationId: connect
+      summary: Mcp
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
   /health:
     get:
       operationId: health
@@ -114,11 +154,27 @@ paths:
         discriminated by `kind`.
 
 
+        Use `kind: stats` for completed engagement totals over the canonical-
+
+        deduplicated `retrieved_rule_union`: exhaustive current-schema PostgreSQL
+
+        indexed matches plus frontier-certified semantic seed UUIDs. The top 20
+
+        semantic records discover clean terms; they do not cap the PostgreSQL
+
+        result count. Incomplete discovery or reconciliation fails the job instead
+
+        of returning sampled or partial totals. Stats jobs cost a flat $5.00 per
+
+        call, expose `24h` publicly, and may omit `window` (defaults to `all`).
+
+
         Response shapes:
 
         - `200 + { fromCache: true, result, charged }` — identical recent job
           within the per-kind freshness window; cached result returned
-          synchronously and charged at full rate (no cache discount).
+          synchronously. `charged` is the full rate, except for a `patterns`/`stats`
+          answer this account already paid for today, which is `0`.
         - `202 + { dedup: true }` — identical job currently queued/running;
           reuses the in-flight `jobId`.
         - `202 + { estimated_cost }` — new job accepted; the credits were
@@ -126,13 +182,13 @@ paths:
         - `402` — insufficient credits; body recommends how to fit your budget.
 
 
-        For `records` / `campaign`, `window`
+        For the per-record-charged kinds, `window` (in `input`) is REQUIRED — it
 
-        (in `input`) is REQUIRED — it drives the credit price (fresher windows
+        selects the slice of the corpus to retrieve over. It does NOT affect price.
 
-        cost more). `estimated_cost` is an upper bound; the final charge is computed
+        `estimated_cost` is an upper bound for those kinds; the final charge is
 
-        from the records actually returned.
+        computed from the records actually returned.
 
 
         Input validation is strict: any undeclared field, type mismatch, or
@@ -149,13 +205,15 @@ paths:
             schema:
               oneOf:
                 - $ref: "#/components/schemas/IQueryJobSubmitBody"
-                - $ref: "#/components/schemas/ICampaignJobSubmitBody"
+                - $ref: "#/components/schemas/IPatternJobSubmitBody"
+                - $ref: "#/components/schemas/IStatsJobSubmitBody"
               discriminator:
                 propertyName: kind
                 mapping:
                   insights: "#/components/schemas/IQueryJobSubmitBody"
                   records: "#/components/schemas/IQueryJobSubmitBody"
-                  campaign: "#/components/schemas/ICampaignJobSubmitBody"
+                  patterns: "#/components/schemas/IPatternJobSubmitBody"
+                  stats: "#/components/schemas/IStatsJobSubmitBody"
       responses:
         "200":
           description: Successful response
@@ -170,8 +228,8 @@ paths:
               $ref: "#/components/headers/CreditsRemaining"
         "402":
           description: Insufficient credits. The body reports the credits required vs
-            available plus budget recommendations (max affordable limit, cheaper
-            windows, top-up URL).
+            available plus budget recommendations (max affordable limit, top-up
+            URL).
           content:
             application/json:
               schema:
@@ -200,9 +258,13 @@ paths:
 
         directly to download the full payload, and re-poll for a fresh URL if it
 
-        expires. Recommended polling cadence: every 2–5 seconds. Typical
+        expires. Recommended polling cadence: every 2–5 seconds. Runtime depends
 
-        end-to-end run: 5–20 s.
+        on the job kind and result breadth; broad stats jobs run in the shared
+
+        15-minute worker budget and may take longer than the synchronous API
+
+        request budget.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -219,6 +281,141 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IJobStatusResponse"
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
+  /intelligence/patterns:
+    get:
+      operationId: patternList
+      summary: Pattern list
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: elementType
+          in: query
+          required: false
+          schema:
+            description: Filter to patterns whose signature carries a given recurrent
+              element.
+            enum:
+              - aesthetic
+              - emotion
+              - product
+              - theme
+              - visual_community
+            type: string
+        - name: elementValue
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IPatternListResponse"
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
+  "/intelligence/patterns/{patternKey}":
+    get:
+      operationId: patternDetail
+      summary: Pattern detail
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: patternKey
+          in: path
+          required: true
+          schema:
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IPatternDetailResponse"
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
+  "/intelligence/patterns/{patternKey}/content":
+    get:
+      operationId: patternContent
+      summary: Pattern content
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: patternKey
+          in: path
+          required: true
+          schema:
+            minLength: 1
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IPatternContentResponse"
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
+  "/intelligence/patterns/{patternKey}/lookalikes":
+    get:
+      operationId: patternLookalikes
+      summary: Pattern lookalikes
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: patternKey
+          in: path
+          required: true
+          schema:
+            minLength: 1
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IPatternLookalikesResponse"
           headers:
             X-Kinetk-Credits-Used:
               $ref: "#/components/headers/CreditsUsed"
@@ -246,19 +443,28 @@ paths:
               $ref: "#/components/headers/CreditsRemaining"
         default:
           $ref: "#/components/responses/Error"
-  /connect:
-    post:
-      operationId: connect
-      summary: Mcp connect
+  "/narratives/{id}":
+    get:
+      operationId: narrativeDetail
+      summary: Drill into one precomputed narrative
+      description: Full evidence bundle for one narrative cluster — header, content
+        rows, top creators, per-platform breakdown, duplicate groups.
       security:
         - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            minLength: 1
+            type: string
       responses:
         "200":
           description: Successful response
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/INarrativeDetailResponse"
           headers:
             X-Kinetk-Credits-Used:
               $ref: "#/components/headers/CreditsUsed"
@@ -266,13 +472,259 @@ paths:
               $ref: "#/components/headers/CreditsRemaining"
         default:
           $ref: "#/components/responses/Error"
+  "/narratives/{id}/trajectory":
+    get:
+      operationId: narrativeTrajectory
+      summary: Narrative trajectory
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            minLength: 1
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/INarrativeTrajectoryResponse"
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
+  /narratives/search:
+    get:
+      operationId: narrativesSearch
+      summary: Filtered search over precomputed narratives
+      description: "Search over precomputed narrative clusters by narrative name and
+        tags. A narrative matches when every word of `q` (stop words aside,
+        English stemming) is a whole word of its name or tags. With no such
+        match the endpoint falls back to narratives whose member content
+        mentions the query, then to the window's trending narratives. For live
+        retrieval, use `POST /intelligence/jobs` with `kind: insights`."
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: true
+          schema:
+            minLength: 1
+            type: string
+        - name: window
+          in: query
+          required: false
+          schema:
+            enum:
+              - 30d
+              - 7d
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/INarrativeSearchResponse"
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
+  /narratives/trending:
+    get:
+      operationId: narrativesTrending
+      summary: Top precomputed narratives for a window
+      description: "Reads precomputed narrative clusters for a bounded window. For
+        live retrieval, submit `POST /intelligence/jobs` with `kind: insights`."
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: window
+          in: query
+          required: false
+          schema:
+            enum:
+              - 30d
+              - 7d
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ITrendingResponse"
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        default:
+          $ref: "#/components/responses/Error"
+  /search:
+    post:
+      operationId: search
+      summary: Synchronous search — content, narratives, patterns and creators in one
+        call
+      description: >
+        One bounded call an agent can make many times per task. Returns typed,
+
+        LLM-ready objects straight from the corpus and the precomputed maps:
+
+
+        - `content` — up to `limit` ranked rows from one capped multimodal
+          retrieval (default 100, max 300), each carrying the `narrativeIds` and
+          `patternKeys` it belongs to so you can walk into
+          `GET /narratives/{id}` and `GET /intelligence/patterns/{patternKey}`.
+        - `narratives` — up to 10 precomputed narratives that match the query
+          (never padded with trending narratives when nothing matches).
+        - `patterns` — up to 5 map-first pattern matches, without the prose.
+          Currently switched off on `/search` (always `[]`) until loading the
+          pattern map moves off the request path; content rows still carry
+          `patternKeys`, and `GET /intelligence/patterns/*` is unaffected.
+        - `creators` — an aggregate of who authored the returned content rows
+          (numeric id, platform, hits, reach; never a handle).
+
+        Deep analysis (statistics, discovery, LLM-written insight) is what
+
+        `POST /intelligence/jobs` is for. `window` is `7d`, `30d` or `all` (default
+
+        `30d`). `all` retrieves with no time bound; no narrative map is built for
+
+        it, so its precomputed narratives come from the 30d map, while narratives
+
+        formed from its own content carry `window_key: all`. A `limit` above 300
+
+        belongs to a `records` job and is rejected with `400`, as is an empty
+
+        `types` list and `creators` without `content` (creators are derived from
+
+        the content rows).
+
+
+        Pricing: $0.010 per content row returned (the `records` rate) when the
+
+        `content` arm runs. The hold is `limit` × $0.010; the settle on a `200`
+
+        charges the rows actually returned and releases the rest, so an empty
+
+        answer costs nothing. `types` without `content` (e.g. `["narratives"]`) runs no
+
+        retrieval and costs nothing. A client `Idempotency-Key` header collapses
+
+        retries of the same logical request (same account, same canonical body)
+
+        onto one charge; without it every call is charged.
+
+
+        Degradation: the free `narratives` and `patterns` arms are best-effort.
+
+        Whether an arm failed, ran out of budget or simply matched nothing, it
+
+        returns `[]`, and the response does not distinguish those cases — a search
+
+        is answered by its `content`. A failed `content` arm is different: it fails
+
+        the whole request with no charge, or becomes the `202`.
+
+
+        Response shapes:
+
+        - `200` — the search result; `usage.credits` and the credit headers
+          report what this call charged.
+        - `202` — the content retrieval exceeded the synchronous budget. The
+          search hold was refunded and the same question was handed to an async
+          `insights` job (100 records, no signals, at that kind's own price and
+          hold); poll `statusUrl`. `status` is the job's real state, which can already be
+          `succeeded` when the submit collapsed onto a cached result.
+        - `402` — insufficient credits for the `limit` × $0.010 hold (or, on the `202` path,
+          for the insights job); the body recommends how to fit your budget.
+        - `429` — rate limited by the API Gateway usage plan; honour `Retry-After`.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ISearchBody"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ISearchResponse"
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+        "202":
+          description: "Accepted for async completion: the content arm exceeded the
+            synchronous budget, the search hold was refunded, and an `insights`
+            job was submitted. Poll `statusUrl`. The credit headers report the
+            job's hold, not the search fee."
+          headers:
+            X-Kinetk-Credits-Used:
+              $ref: "#/components/headers/CreditsUsed"
+            X-Kinetk-Credits-Remaining:
+              $ref: "#/components/headers/CreditsRemaining"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ISearchAcceptedResponse"
+        "400":
+          description: "Rejected input: `window` other than `7d`/`30d`/`all`, `limit`
+            above 300 or not a positive integer, an empty `types` list,
+            `creators` without `content`, an unsupported platform or type, or an
+            undeclared field."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: Insufficient credits. The body reports the credits required vs
+            available plus budget recommendations (max affordable limit, top-up
+            URL).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IInsufficientCreditsResponse"
+        default:
+          $ref: "#/components/responses/Error"
   /usage:
     get:
       operationId: usage
       summary: Credit usage history for your account
-      description: Newest-first ledger entries (top-ups, settlements, refunds) for the
-        account the key belongs to. Paginate with `limit` + `cursor`; scope to a
-        single key with `keyId`.
+      description: Newest-first ledger entries (top-ups, signup grants, settlements,
+        refunds) for the account the key belongs to. Paginate with `limit` +
+        `cursor`; scope to a single key with `keyId`.
       security:
         - ApiKeyAuth: []
       responses:
@@ -315,10 +767,6 @@ components:
     IBudgetRecommendations:
       additionalProperties: false
       properties:
-        alternativeWindows:
-          items:
-            $ref: "#/components/schemas/IBudgetWindowOption"
-          type: array
         maxLimitForWindow:
           type: number
         topUpUrl:
@@ -326,69 +774,6 @@ components:
       required:
         - maxLimitForWindow
         - topUpUrl
-      type: object
-    IBudgetWindowOption:
-      additionalProperties: false
-      properties:
-        maxLimit:
-          type: number
-        window:
-          $ref: "#/components/schemas/PublicJobWindow"
-      required:
-        - maxLimit
-        - window
-      type: object
-    ICampaignBriefInput:
-      additionalProperties: false
-      properties:
-        audience:
-          type: string
-        limit:
-          type: number
-        output:
-          description: "Output mode: 'brief' (default) generates + saves a brief;
-            'context' returns the raw campaign-context bundle."
-          enum:
-            - brief
-            - context
-          type: string
-        platforms:
-          description: Platforms to filter by. Case-insensitive.
-          items:
-            enum:
-              - instagram
-              - pinterest
-              - reddit
-              - snapchat
-              - tiktok
-              - x
-            type: string
-          type: array
-        query:
-          description: The campaign topic/description (free text) — keyed by `query`,
-            unified with records/insights.
-          type: string
-        tone:
-          type: string
-        window:
-          $ref: "#/components/schemas/PublicJobWindow"
-      required:
-        - limit
-        - query
-        - window
-      type: object
-    ICampaignJobSubmitBody:
-      additionalProperties: false
-      properties:
-        input:
-          $ref: "#/components/schemas/ICampaignBriefInput"
-        kind:
-          enum:
-            - campaign
-          type: string
-      required:
-        - input
-        - kind
       type: object
     IHealthResponse:
       additionalProperties: false
@@ -415,6 +800,13 @@ components:
             - unreachable
           type: string
         dbError:
+          type: string
+        dbWriter:
+          enum:
+            - connected
+            - unreachable
+          type: string
+        dbWriterError:
           type: string
         durationMs:
           type: number
@@ -470,6 +862,7 @@ components:
       required:
         - content
         - db
+        - dbWriter
         - durationMs
         - narratives
         - stage
@@ -1280,7 +1673,8 @@ components:
         recommendations:
           $ref: "#/components/schemas/IBudgetRecommendations"
         tier:
-          description: "Pricing tier of the requested kind: 1 = per-record, 2 = per-signal."
+          description: "Pricing tier of the requested kind: 2 marks the kind carrying the
+            LLM-prose add-on."
           enum:
             - 1
             - 2
@@ -1310,6 +1704,8 @@ components:
           anyOf:
             - $ref: "#/components/schemas/IRecordsJobResult"
             - $ref: "#/components/schemas/IInsightsJobResult"
+            - $ref: "#/components/schemas/IPatternsJobResult"
+            - $ref: "#/components/schemas/IStatsJobResult"
         resultBytes:
           description: Size of the stored result in bytes (present alongside resultUrl).
           type: number
@@ -1370,6 +1766,8 @@ components:
           anyOf:
             - $ref: "#/components/schemas/IRecordsJobResult"
             - $ref: "#/components/schemas/IInsightsJobResult"
+            - $ref: "#/components/schemas/IPatternsJobResult"
+            - $ref: "#/components/schemas/IStatsJobResult"
         resultBytes:
           description: Size of the stored result in bytes (present alongside resultUrl).
           type: number
@@ -1763,6 +2161,416 @@ components:
         - trajectory
         - window
       type: object
+    IPatternContentResponse:
+      additionalProperties: false
+      properties:
+        content:
+          items:
+            additionalProperties: false
+            properties:
+              centroidSimilarity:
+                description: Cosine to the pattern centroid; null for tag-attached members.
+                type: number
+                nullable: true
+              contentUrl:
+                type: string
+                nullable: true
+              contentUuid:
+                type: string
+              description:
+                description: Falls back for the many platforms that post without a title.
+                type: string
+                nullable: true
+              engagement:
+                type: number
+              isRepresentative:
+                type: boolean
+              platform:
+                type: string
+                nullable: true
+              publishedAt:
+                type: string
+                nullable: true
+              title:
+                type: string
+                nullable: true
+            required:
+              - centroidSimilarity
+              - contentUrl
+              - contentUuid
+              - description
+              - engagement
+              - isRepresentative
+              - platform
+              - publishedAt
+              - title
+            type: object
+          type: array
+        patternKey:
+          type: string
+      required:
+        - content
+        - patternKey
+      type: object
+    IPatternDetailResponse:
+      additionalProperties: false
+      properties:
+        clusteringMethod:
+          type: string
+        confidence:
+          type: number
+        contentCount:
+          type: number
+        creatorCount:
+          type: number
+        earlyCount:
+          type: number
+        firstSeenAt:
+          type: string
+        generation:
+          type: string
+        label:
+          type: string
+        labelSource:
+          description: "'deterministic' when the label is SQL-derived, 'llm' once named."
+          type: string
+        lateCount:
+          type: number
+        lateShare:
+          description: Share of members published in the later half of the scope window.
+          type: number
+          nullable: true
+        medoidContentUuids:
+          items:
+            type: string
+          type: array
+        patternKey:
+          type: string
+        platformCount:
+          type: number
+        reconciliation:
+          additionalProperties: false
+          properties:
+            cosine:
+              type: number
+            memberOverlap:
+              type: number
+              nullable: true
+          required:
+            - cosine
+            - memberOverlap
+          type: object
+          description: How this pattern's identity was matched to the prior generation.
+          nullable: true
+        recurrentElements:
+          items:
+            $ref: "#/components/schemas/IRecurrentElement"
+          type: array
+        scopeDays:
+          type: number
+        summary:
+          type: string
+          nullable: true
+        tagAttachedMembers:
+          type: number
+        totalEngagement:
+          type: number
+        trajectory:
+          items:
+            additionalProperties: false
+            properties:
+              contentCount:
+                type: number
+              creatorCount:
+                type: number
+              generation:
+                type: string
+            required:
+              - contentCount
+              - creatorCount
+              - generation
+            type: object
+          type: array
+      required:
+        - clusteringMethod
+        - confidence
+        - contentCount
+        - creatorCount
+        - earlyCount
+        - firstSeenAt
+        - generation
+        - label
+        - labelSource
+        - lateCount
+        - lateShare
+        - medoidContentUuids
+        - patternKey
+        - platformCount
+        - reconciliation
+        - recurrentElements
+        - scopeDays
+        - summary
+        - tagAttachedMembers
+        - totalEngagement
+        - trajectory
+      type: object
+    IPatternDiscoveryInput:
+      additionalProperties: false
+      properties:
+        includeProse:
+          description: Set false to skip the grounded prose summary and return evidence
+            only.
+          type: boolean
+        limit:
+          description: Max patterns to return (default 8, max 25).
+          type: number
+        query:
+          description: What to look for — free text, matched against pattern centroids.
+          type: string
+      required:
+        - query
+      type: object
+    IPatternJobSubmitBody:
+      additionalProperties: false
+      properties:
+        input:
+          $ref: "#/components/schemas/IPatternDiscoveryInput"
+        kind:
+          enum:
+            - patterns
+          type: string
+      required:
+        - input
+        - kind
+      type: object
+    IPatternListResponse:
+      additionalProperties: false
+      properties:
+        generation:
+          description: Generation the response is pinned to; null when no pattern matched.
+          type: string
+          nullable: true
+        patterns:
+          items:
+            $ref: "#/components/schemas/IPatternSummary"
+          type: array
+      required:
+        - generation
+        - patterns
+      type: object
+    IPatternLookalikesResponse:
+      additionalProperties: false
+      properties:
+        lookalikes:
+          items:
+            additionalProperties: false
+            properties:
+              centroidCosine:
+                description: Visual similarity of the two pattern centroids.
+                type: number
+              corroborationCount:
+                description: Stored similarity edges crossing the two member sets.
+                type: number
+              label:
+                type: string
+              patternKey:
+                type: string
+              sharedElements:
+                $ref: "#/components/schemas/PatternSharedElements"
+              tagJaccard:
+                description: Tag-vocabulary overlap — LOW is what makes the pair interesting.
+                type: number
+            required:
+              - centroidCosine
+              - corroborationCount
+              - label
+              - patternKey
+              - sharedElements
+              - tagJaccard
+            type: object
+          type: array
+        patternKey:
+          type: string
+      required:
+        - lookalikes
+        - patternKey
+      type: object
+    IPatternSummary:
+      additionalProperties: false
+      properties:
+        confidence:
+          type: number
+        contentCount:
+          type: number
+        creatorCount:
+          type: number
+        firstSeenAt:
+          type: string
+        generation:
+          type: string
+        label:
+          type: string
+        labelSource:
+          description: "'deterministic' when the label is SQL-derived, 'llm' once named."
+          type: string
+        patternKey:
+          type: string
+        platformCount:
+          type: number
+        summary:
+          type: string
+          nullable: true
+        totalEngagement:
+          type: number
+      required:
+        - confidence
+        - contentCount
+        - creatorCount
+        - firstSeenAt
+        - generation
+        - label
+        - labelSource
+        - patternKey
+        - platformCount
+        - summary
+        - totalEngagement
+      type: object
+    IPatternsJobResult:
+      additionalProperties: false
+      properties:
+        generation:
+          type: string
+          nullable: true
+        narrative:
+          type: string
+          nullable: true
+        patterns:
+          items:
+            additionalProperties: false
+            properties:
+              lexicalMatch:
+                description: Share of query terms found in the pattern's label/summary/elements.
+                type: number
+              lookalikes:
+                items:
+                  additionalProperties: false
+                  properties:
+                    centroidCosine:
+                      type: number
+                    corroborationCount:
+                      type: number
+                    label:
+                      type: string
+                    patternKey:
+                      type: string
+                    sharedElements:
+                      $ref: "#/components/schemas/PatternSharedElements"
+                    tagJaccard:
+                      type: number
+                  required:
+                    - centroidCosine
+                    - corroborationCount
+                    - label
+                    - patternKey
+                    - sharedElements
+                    - tagJaccard
+                  type: object
+                type: array
+              memberTextMatch:
+                description: Share of the pattern's posts whose own text matches the query.
+                type: number
+              pattern:
+                $ref: "#/components/schemas/PatternDetail"
+              queryRelevance:
+                description: "Blended relevance: visual + lexical. What the ranking uses."
+                type: number
+              representativeContent:
+                items:
+                  additionalProperties: false
+                  properties:
+                    centroidSimilarity:
+                      type: number
+                      nullable: true
+                    contentUrl:
+                      type: string
+                      nullable: true
+                    contentUuid:
+                      type: string
+                    description:
+                      description: Falls back for the many platforms that post without a title.
+                      type: string
+                      nullable: true
+                    engagement:
+                      type: number
+                    isRepresentative:
+                      type: boolean
+                    platform:
+                      type: string
+                      nullable: true
+                    publishedAt:
+                      type: string
+                      nullable: true
+                    title:
+                      type: string
+                      nullable: true
+                  required:
+                    - centroidSimilarity
+                    - contentUrl
+                    - contentUuid
+                    - description
+                    - engagement
+                    - isRepresentative
+                    - platform
+                    - publishedAt
+                    - title
+                  type: object
+                type: array
+              visualSimilarity:
+                description: Query-to-centroid cosine on its own (small magnitudes are normal).
+                type: number
+            required:
+              - lexicalMatch
+              - lookalikes
+              - memberTextMatch
+              - pattern
+              - queryRelevance
+              - representativeContent
+              - visualSimilarity
+            type: object
+          type: array
+        provenance:
+          additionalProperties: false
+          properties:
+            generation:
+              type: string
+              nullable: true
+            mapAvailable:
+              description: Absent when the map has no generation yet.
+              type: boolean
+            patternsInMap:
+              description: Patterns in the map that were compared against the query.
+              type: number
+            patternsMatched:
+              type: number
+            recordsAnalyzed:
+              description: Map members behind the matched patterns.
+              type: number
+          required:
+            - generation
+            - mapAvailable
+            - patternsInMap
+            - patternsMatched
+            - recordsAnalyzed
+          type: object
+        query:
+          type: string
+      required:
+        - generation
+        - narrative
+        - patterns
+        - provenance
+        - query
+      type: object
     IQueryIntelligenceInput:
       additionalProperties: false
       properties:
@@ -1801,6 +2609,13 @@ components:
           type: array
         query:
           type: string
+        requireAdjacentImpactEvidence:
+          description: >-
+            insights only: require adjacent-impact narratives to have
+            deterministic
+
+            authored-text evidence connecting them to the query. Defaults to false.
+          type: boolean
         returnRecords:
           description: >-
             insights only: top-ranked evidence records returned in `content`
@@ -1911,6 +2726,989 @@ components:
         - type
         - window
       type: object
+    IRecurrentElement:
+      additionalProperties: false
+      properties:
+        support:
+          description: Members of this pattern carrying the element.
+          type: number
+        type:
+          enum:
+            - aesthetic
+            - emotion
+            - product
+            - theme
+            - visual_community
+          type: string
+        value:
+          type: string
+      required:
+        - support
+        - type
+        - value
+      type: object
+    ISearchAcceptedResponse:
+      additionalProperties: false
+      properties:
+        charged:
+          description: Credits actually charged when the job was served from cache.
+          type: number
+        estimated_cost:
+          description: Credit hold placed on the fallback insights job.
+          type: number
+        jobId:
+          type: string
+        reason:
+          enum:
+            - sync_budget_exceeded
+          type: string
+        request_id:
+          type: string
+        status:
+          enum:
+            - queued
+            - running
+            - succeeded
+          type: string
+        statusUrl:
+          type: string
+      required:
+        - jobId
+        - reason
+        - request_id
+        - status
+        - statusUrl
+      type: object
+    ISearchBody:
+      additionalProperties: false
+      properties:
+        limit:
+          description: Max content rows to return (default 100, max 300). Larger pulls
+            belong to a `records` job.
+          type: number
+        platforms:
+          description: Platforms to filter content by. Case-insensitive; omit for all
+            platforms.
+          items:
+            enum:
+              - instagram
+              - pinterest
+              - reddit
+              - snapchat
+              - tiktok
+              - x
+            type: string
+          type: array
+        query:
+          description: >-
+            Free-text query. Embedded for the content retrieval and matched
+            against
+
+            the narrative and pattern maps.
+          minLength: 1
+          type: string
+        types:
+          description: >-
+            Result arms to return. Defaults to all four. A request without
+            `content`
+
+            runs no retrieval and costs nothing; `creators` are aggregated from the
+
+            content rows, so asking for them without `content` is rejected with 400.
+          items:
+            enum:
+              - content
+              - creators
+              - narratives
+              - patterns
+            type: string
+          type: array
+        window:
+          description: Freshness window for content and narratives. Defaults to `30d`.
+          enum:
+            - 30d
+            - 7d
+            - all
+          type: string
+      required:
+        - query
+      type: object
+    ISearchContentItem:
+      additionalProperties: false
+      properties:
+        authorReach:
+          type: number
+        commentCount:
+          type: number
+        contentType:
+          type: string
+          nullable: true
+        creatorId:
+          type: number
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        engagementDepth:
+          type: number
+        engagementScore:
+          type: number
+        enrichment:
+          $ref: "#/components/schemas/PublicEnrichment"
+        exampleRankingScore:
+          type: number
+        followerCount:
+          type: number
+          nullable: true
+        intentEvidenceSource:
+          enum:
+            - authored_text
+            - no_match
+            - no_text
+            - tag_only
+          type: string
+        intentSimilarity:
+          type: number
+          nullable: true
+        likeCount:
+          type: number
+        narrativeIds:
+          description: Ids of the current-generation narratives this row belongs to (for
+            GET /narratives/{id}).
+          items:
+            type: string
+          type: array
+        patternKeys:
+          description: Keys of the current-generation patterns this row belongs to (for
+            GET /intelligence/patterns/{patternKey}).
+          items:
+            type: string
+          type: array
+        platform:
+          type: string
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+        rawSimilarity:
+          type: number
+        recencyScore:
+          type: number
+        relevance:
+          type: number
+        rrfScore:
+          type: number
+        shareCount:
+          type: number
+        similarity:
+          type: number
+        tags:
+          items:
+            type: string
+          type: array
+        title:
+          type: string
+          nullable: true
+        uuid:
+          type: string
+        viewCount:
+          type: number
+      required:
+        - authorReach
+        - commentCount
+        - engagementDepth
+        - engagementScore
+        - exampleRankingScore
+        - likeCount
+        - narrativeIds
+        - patternKeys
+        - rawSimilarity
+        - recencyScore
+        - rrfScore
+        - shareCount
+        - similarity
+        - tags
+        - uuid
+        - viewCount
+      type: object
+    ISearchCreator:
+      additionalProperties: false
+      properties:
+        creatorId:
+          type: number
+        followerCount:
+          type: number
+          nullable: true
+        hits:
+          description: Number of returned content rows authored by this creator.
+          type: number
+        platform:
+          type: string
+      required:
+        - creatorId
+        - followerCount
+        - hits
+        - platform
+      type: object
+    ISearchNarrative:
+      additionalProperties: false
+      properties:
+        acceleration:
+          type: number
+          nullable: true
+        computed_at:
+          type: string
+        content_count:
+          type: number
+        creator_count:
+          type: number
+        diffusion:
+          type: number
+          nullable: true
+        emerging_score:
+          type: number
+        id:
+          type: string
+        label:
+          type: string
+        lifecycle:
+          type: string
+          nullable: true
+        memberOverlap:
+          description: Retrieved content rows belonging to this narrative (tracked
+            membership path only).
+          type: number
+        momentum_score:
+          type: number
+        narrative_key:
+          type: string
+          nullable: true
+        overlapZScore:
+          description: >-
+            How far that overlap exceeds what the narrative's share of the map
+            predicts,
+
+            in units of its own noise. A comparative score for ranking and display, not
+
+            a threshold: admission uses an exact significance test, so every narrative
+
+            returned has already cleared it (tracked membership path only).
+          type: number
+        overlap_count:
+          type: number
+        platform_count:
+          type: number
+        queryRelevance:
+          description: How closely the narrative's members match the query, 0-1 (emergent
+            path only).
+          type: number
+        representative_content_uuid:
+          type: string
+          nullable: true
+        score_breakdown:
+          $ref: "#/components/schemas/INarrativeScoreBreakdown"
+        sentiment_breakdown:
+          $ref: "#/components/schemas/INarrativeSentimentBreakdown"
+          nullable: true
+        sentiment_label:
+          type: string
+          nullable: true
+        sentiment_score:
+          type: number
+          nullable: true
+        source:
+          $ref: "#/components/schemas/SearchNarrativeSource"
+        summary:
+          type: string
+        text_rank:
+          type: number
+        top_tags:
+          items:
+            type: string
+          type: array
+        total_engagement:
+          type: string
+        trajectory_confidence:
+          type: string
+          nullable: true
+        velocity:
+          type: number
+          nullable: true
+        window_end:
+          type: string
+        window_key:
+          description: The precomputed window a tracked narrative belongs to, or `all` for
+            one formed from an unbounded search.
+          enum:
+            - 30d
+            - 7d
+            - all
+          type: string
+        window_start:
+          type: string
+      required:
+        - computed_at
+        - content_count
+        - creator_count
+        - emerging_score
+        - id
+        - label
+        - momentum_score
+        - platform_count
+        - score_breakdown
+        - source
+        - summary
+        - top_tags
+        - total_engagement
+        - window_end
+        - window_key
+        - window_start
+      type: object
+    ISearchPattern:
+      additionalProperties: false
+      properties:
+        lexicalMatch:
+          description: Share of query terms found in the pattern's label/summary/elements.
+          type: number
+        lookalikes:
+          items:
+            additionalProperties: false
+            properties:
+              centroidCosine:
+                type: number
+              corroborationCount:
+                type: number
+              label:
+                type: string
+              patternKey:
+                type: string
+              sharedElements:
+                $ref: "#/components/schemas/PatternSharedElements"
+              tagJaccard:
+                type: number
+            required:
+              - centroidCosine
+              - corroborationCount
+              - label
+              - patternKey
+              - sharedElements
+              - tagJaccard
+            type: object
+          type: array
+        memberTextMatch:
+          description: Share of the pattern's posts whose own text matches the query.
+          type: number
+        pattern:
+          $ref: "#/components/schemas/PatternDetail"
+        queryRelevance:
+          description: "Blended relevance: visual + lexical. What the ranking uses."
+          type: number
+        representativeContent:
+          items:
+            additionalProperties: false
+            properties:
+              centroidSimilarity:
+                type: number
+                nullable: true
+              contentUrl:
+                type: string
+                nullable: true
+              contentUuid:
+                type: string
+              description:
+                description: Falls back for the many platforms that post without a title.
+                type: string
+                nullable: true
+              engagement:
+                type: number
+              isRepresentative:
+                type: boolean
+              platform:
+                type: string
+                nullable: true
+              publishedAt:
+                type: string
+                nullable: true
+              title:
+                type: string
+                nullable: true
+            required:
+              - centroidSimilarity
+              - contentUrl
+              - contentUuid
+              - description
+              - engagement
+              - isRepresentative
+              - platform
+              - publishedAt
+              - title
+            type: object
+          type: array
+        visualSimilarity:
+          description: Query-to-centroid cosine on its own (small magnitudes are normal).
+          type: number
+      required:
+        - lexicalMatch
+        - lookalikes
+        - memberTextMatch
+        - pattern
+        - queryRelevance
+        - representativeContent
+        - visualSimilarity
+      type: object
+    ISearchResponse:
+      additionalProperties: false
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/ISearchContentItem"
+          type: array
+        creators:
+          items:
+            $ref: "#/components/schemas/ISearchCreator"
+          type: array
+        narratives:
+          items:
+            $ref: "#/components/schemas/ISearchNarrative"
+          type: array
+        patterns:
+          items:
+            $ref: "#/components/schemas/ISearchPattern"
+          type: array
+        query:
+          type: string
+        request_id:
+          description: API Gateway request id; echoed so a caller can correlate logs and
+            ledger rows.
+          type: string
+        response_time_ms:
+          type: number
+        usage:
+          additionalProperties: false
+          properties:
+            credits:
+              description: Decimal credits charged for this call (0 without the `content`
+                arm).
+              type: number
+          required:
+            - credits
+          type: object
+        window:
+          $ref: "#/components/schemas/SearchWindow"
+      required:
+        - content
+        - creators
+        - narratives
+        - patterns
+        - query
+        - request_id
+        - response_time_ms
+        - usage
+        - window
+      type: object
+    IStatsAcceptedTermSourceProvenance:
+      additionalProperties: false
+      properties:
+        accepted_tags:
+          items:
+            type: string
+          type: array
+        rejected_generic_terms:
+          items:
+            type: string
+          type: array
+      required:
+        - accepted_tags
+        - rejected_generic_terms
+      type: object
+    IStatsCompletedLlmTermProvenance:
+      additionalProperties: false
+      properties:
+        accepted_tags:
+          items:
+            type: string
+          type: array
+        model:
+          type: string
+        prompt_version:
+          type: string
+        provider:
+          type: string
+        rejected_generic_terms:
+          items:
+            type: string
+          type: array
+        status:
+          enum:
+            - complete
+          type: string
+      required:
+        - accepted_tags
+        - model
+        - prompt_version
+        - provider
+        - rejected_generic_terms
+        - status
+      type: object
+    IStatsCompletedProvenance:
+      additionalProperties: false
+      properties:
+        contract_version:
+          enum:
+            - stats_retrieved_rule_union_v3
+          type: string
+        dedup_mode:
+          enum:
+            - canonical_asset
+          type: string
+        final_union:
+          type: number
+        indexed_total:
+          $ref: "#/components/schemas/IStatsTotal"
+        match_mode:
+          enum:
+            - any_term
+          type: string
+        overall_status:
+          enum:
+            - complete
+          type: string
+        overlaps:
+          items:
+            $ref: "#/components/schemas/IStatsOverlapProvenance"
+          type: array
+        semantic:
+          $ref: "#/components/schemas/IStatsCompletedSemanticProvenance"
+        sources:
+          items:
+            $ref: "#/components/schemas/IStatsSourceProvenance"
+          type: array
+        tag_match:
+          $ref: "#/components/schemas/IStatsTagMatchProvenance"
+        terms:
+          $ref: "#/components/schemas/IStatsCompletedTermProvenance"
+        total_kind:
+          enum:
+            - retrieved_rule_union
+          type: string
+      required:
+        - contract_version
+        - dedup_mode
+        - final_union
+        - indexed_total
+        - match_mode
+        - overall_status
+        - overlaps
+        - semantic
+        - sources
+        - tag_match
+        - terms
+        - total_kind
+      type: object
+    IStatsCompletedSemanticArmProvenance:
+      additionalProperties: false
+      properties:
+        arm_key:
+          type: string
+        candidates_returned:
+          type: number
+        certified:
+          description: False when the arm was still full at the deepest request and had to
+            stop.
+          type: boolean
+        frontier_certainty:
+          type: number
+          nullable: true
+        requested_limit:
+          $ref: "#/components/schemas/IStatsSemanticDepth"
+        saturated:
+          type: boolean
+      required:
+        - arm_key
+        - candidates_returned
+        - certified
+        - frontier_certainty
+        - requested_limit
+        - saturated
+      type: object
+    IStatsCompletedSemanticProvenance:
+      additionalProperties: false
+      properties:
+        arms:
+          items:
+            $ref: "#/components/schemas/IStatsCompletedSemanticArmProvenance"
+          type: array
+        boundary_certainty:
+          type: number
+          nullable: true
+        calls_by_depth:
+          $ref: "#/components/schemas/IStatsSemanticCallsByDepth"
+        merged_candidates:
+          type: number
+        min_score:
+          type: number
+        rounds:
+          type: number
+        score_percentiles:
+          additionalProperties: false
+          properties:
+            max:
+              type: number
+            p50:
+              type: number
+            p90:
+              type: number
+            p99:
+              type: number
+          required:
+            - max
+            - p50
+            - p90
+            - p99
+          type: object
+          description: Fused hybrid score distribution across all merged candidates, for
+            calibrating min_score.
+          nullable: true
+        selected_seeds:
+          description: Highest-certainty prefix of those records used to harvest tags.
+          type: number
+        semantic_depth_limited:
+          description: >-
+            True when discovery exhausted its deepest allowed limit with an arm
+            still
+
+            full. The corpus held more matching records than could be reached, so the
+
+            totals are a floor for the retrieval rule rather than the whole of it.
+          type: boolean
+        semantic_records:
+          description: Eligible canonical records contributed to the totals by the
+            semantic arm.
+          type: number
+        status:
+          enum:
+            - complete
+          type: string
+        threshold_passing_candidates:
+          type: number
+      required:
+        - arms
+        - boundary_certainty
+        - calls_by_depth
+        - merged_candidates
+        - min_score
+        - rounds
+        - score_percentiles
+        - selected_seeds
+        - semantic_depth_limited
+        - semantic_records
+        - status
+        - threshold_passing_candidates
+      type: object
+    IStatsCompletedSemanticTermProvenance:
+      additionalProperties: false
+      properties:
+        accepted_tags:
+          items:
+            type: string
+          type: array
+        minimum_support:
+          type: number
+        rejected_generic_terms:
+          items:
+            type: string
+          type: array
+        rejected_low_support_terms:
+          items:
+            type: string
+          type: array
+        rejected_unrelated_terms:
+          description: Harvested with enough support, but the tag does not reference the
+            query.
+          items:
+            type: string
+          type: array
+        support:
+          items:
+            $ref: "#/components/schemas/IStatsSemanticTermSupportProvenance"
+          type: array
+      required:
+        - accepted_tags
+        - minimum_support
+        - rejected_generic_terms
+        - rejected_low_support_terms
+        - rejected_unrelated_terms
+        - support
+      type: object
+    IStatsCompletedTermProvenance:
+      additionalProperties: false
+      properties:
+        accepted_terms:
+          items:
+            type: string
+          type: array
+        deterministic:
+          $ref: "#/components/schemas/IStatsAcceptedTermSourceProvenance"
+        llm:
+          $ref: "#/components/schemas/IStatsCompletedLlmTermProvenance"
+        preprocessing_version:
+          enum:
+            - stats_terms_v1
+          type: string
+        rejected_generic_terms:
+          items:
+            type: string
+          type: array
+        seed_records_used:
+          type: number
+        semantic:
+          $ref: "#/components/schemas/IStatsCompletedSemanticTermProvenance"
+        status:
+          enum:
+            - complete
+          type: string
+      required:
+        - accepted_terms
+        - deterministic
+        - llm
+        - preprocessing_version
+        - rejected_generic_terms
+        - seed_records_used
+        - semantic
+        - status
+      type: object
+    IStatsJobResult:
+      additionalProperties: false
+      properties:
+        platforms:
+          items:
+            $ref: "#/components/schemas/IStatsPlatform"
+          type: array
+        provenance:
+          $ref: "#/components/schemas/IStatsCompletedProvenance"
+        query:
+          type: string
+        total:
+          $ref: "#/components/schemas/IStatsTotal"
+        window:
+          enum:
+            - 24h
+            - 30d
+            - 7d
+            - all
+          type: string
+      required:
+        - platforms
+        - provenance
+        - query
+        - total
+        - window
+      type: object
+    IStatsJobSubmitBody:
+      additionalProperties: false
+      properties:
+        input:
+          $ref: "#/components/schemas/IStatsJobSubmitInput"
+        kind:
+          enum:
+            - stats
+          type: string
+      required:
+        - input
+        - kind
+      type: object
+    IStatsJobSubmitInput:
+      additionalProperties: false
+      properties:
+        platforms:
+          description: Platforms to include. Omit to include all platforms found in the
+            result.
+          items:
+            enum:
+              - discord
+              - facebook
+              - instagram
+              - pinterest
+              - reddit
+              - snapchat
+              - threads
+              - tiktok
+              - twitch
+              - x
+              - youtube
+            type: string
+          type: array
+        query:
+          description: Free-text query used for semantic and likely-tag retrieval.
+          type: string
+        window:
+          description: Defaults to `all` when omitted.
+          enum:
+            - 24h
+            - 30d
+            - 7d
+            - all
+          type: string
+      required:
+        - query
+      type: object
+    IStatsOverlapProvenance:
+      additionalProperties: false
+      properties:
+        canonical_groups:
+          type: number
+        mask:
+          type: number
+        sources:
+          items:
+            $ref: "#/components/schemas/IStatsSourceName"
+          type: array
+      required:
+        - canonical_groups
+        - mask
+        - sources
+      type: object
+    IStatsPlatform:
+      additionalProperties: false
+      properties:
+        engagement_score:
+          type: number
+        platform:
+          type: string
+        total_comments:
+          type: number
+        total_likes:
+          type: number
+        total_records:
+          type: number
+        total_views:
+          type: number
+      required:
+        - engagement_score
+        - platform
+        - total_comments
+        - total_likes
+        - total_records
+        - total_views
+      type: object
+    IStatsSemanticCallsByDepth:
+      additionalProperties: false
+      properties:
+        "2000":
+          type: number
+        "4000":
+          type: number
+        "8000":
+          type: number
+      required:
+        - "2000"
+        - "4000"
+        - "8000"
+      type: object
+    IStatsSemanticDepth:
+      enum:
+        - 2000
+        - 4000
+        - 8000
+      type: number
+    IStatsSemanticTermSupportProvenance:
+      additionalProperties: false
+      properties:
+        accepted:
+          type: boolean
+        literal_variant:
+          type: boolean
+        support:
+          type: number
+        term:
+          type: string
+      required:
+        - accepted
+        - literal_variant
+        - support
+        - term
+      type: object
+    IStatsSourceName:
+      enum:
+        - full_text
+        - product
+        - semantic
+        - tag
+        - theme
+      type: string
+    IStatsSourceProvenance:
+      additionalProperties: false
+      properties:
+        canonical_groups:
+          type: number
+        exclusive_groups:
+          type: number
+        raw_matches:
+          type: number
+        source:
+          $ref: "#/components/schemas/IStatsSourceName"
+        unique_records:
+          type: number
+      required:
+        - canonical_groups
+        - exclusive_groups
+        - raw_matches
+        - source
+        - unique_records
+      type: object
+    IStatsTagMatchProvenance:
+      additionalProperties: false
+      description: "Corpus tags resolved for the tag arm. Uncapped: no match is dropped."
+      properties:
+        match_batches:
+          description: Statements the tag match was split across; high means an expensive
+            query.
+          type: number
+        matched_tag_sample:
+          description: >-
+            A bounded, alphabetical sample of the resolved tags. `resolved_tags`
+            alone
+
+            answers "how many" but not "which", so a caller asking why a tag they expect
+
+            is missing has nothing to read. The full set reaches 15k and cannot ship.
+          items:
+            type: string
+          type: array
+        resolved_tag_ids:
+          type: number
+        resolved_tags:
+          type: number
+        skipped_reason:
+          type: string
+          nullable: true
+      required:
+        - match_batches
+        - matched_tag_sample
+        - resolved_tag_ids
+        - resolved_tags
+        - skipped_reason
+      type: object
+    IStatsTotal:
+      additionalProperties: false
+      properties:
+        total_comments:
+          type: number
+        total_engagement:
+          type: number
+        total_likes:
+          type: number
+        total_records:
+          type: number
+        total_views:
+          type: number
+      required:
+        - total_comments
+        - total_engagement
+        - total_likes
+        - total_records
+        - total_views
+      type: object
     ITrendingResponse:
       additionalProperties: false
       properties:
@@ -1940,9 +3738,11 @@ components:
           type: string
         kind:
           enum:
-            - campaign
             - insights
+            - patterns
             - records
+            - search
+            - stats
           type: string
         occurredAt:
           type: string
@@ -1958,6 +3758,7 @@ components:
           type: string
         type:
           enum:
+            - grant
             - refund
             - reserve
             - reversal
@@ -1991,9 +3792,10 @@ components:
       type: object
     JobKind:
       enum:
-        - campaign
         - insights
+        - patterns
         - records
+        - stats
       type: string
     JobStatus:
       enum:
@@ -2008,6 +3810,135 @@ components:
         - 7d
         - all
       type: string
+    PatternDetail:
+      additionalProperties: false
+      properties:
+        clusteringMethod:
+          type: string
+        confidence:
+          type: number
+        contentCount:
+          type: number
+        creatorCount:
+          type: number
+        earlyCount:
+          type: number
+        firstSeenAt:
+          type: string
+        generation:
+          type: string
+        label:
+          type: string
+        labelSource:
+          type: string
+        lateCount:
+          type: number
+        lateShare:
+          type: number
+          nullable: true
+        medoidContentUuids:
+          items:
+            type: string
+          type: array
+        patternKey:
+          type: string
+        platformCount:
+          type: number
+        reconciliation:
+          additionalProperties: false
+          properties:
+            cosine:
+              type: number
+            memberOverlap:
+              type: number
+              nullable: true
+          required:
+            - cosine
+            - memberOverlap
+          type: object
+          nullable: true
+        recurrentElements:
+          items:
+            additionalProperties: false
+            properties:
+              support:
+                type: number
+              type:
+                type: string
+              value:
+                type: string
+            required:
+              - support
+              - type
+              - value
+            type: object
+          type: array
+        scopeDays:
+          type: number
+        summary:
+          type: string
+          nullable: true
+        tagAttachedMembers:
+          type: number
+        totalEngagement:
+          type: number
+        trajectory:
+          items:
+            additionalProperties: false
+            properties:
+              contentCount:
+                type: number
+              creatorCount:
+                type: number
+              generation:
+                type: string
+            required:
+              - contentCount
+              - creatorCount
+              - generation
+            type: object
+          type: array
+      required:
+        - clusteringMethod
+        - confidence
+        - contentCount
+        - creatorCount
+        - earlyCount
+        - firstSeenAt
+        - generation
+        - label
+        - labelSource
+        - lateCount
+        - lateShare
+        - medoidContentUuids
+        - patternKey
+        - platformCount
+        - reconciliation
+        - recurrentElements
+        - scopeDays
+        - summary
+        - tagAttachedMembers
+        - totalEngagement
+        - trajectory
+      type: object
+    PatternSharedElements:
+      additionalProperties:
+        items:
+          additionalProperties: false
+          properties:
+            neighborSupport:
+              type: number
+            selfSupport:
+              type: number
+            value:
+              type: string
+          required:
+            - neighborSupport
+            - selfSupport
+            - value
+          type: object
+        type: array
+      type: object
     PublicEnrichment:
       additionalProperties: false
       properties:
@@ -2321,8 +4252,11 @@ components:
         relationImpact:
           type: string
         representativeContent:
+          description: |-
+            Top posts backing this narrative, ordered by engagement. Carries the
+            source `contentUrl` so the evidence can be opened and checked.
           items:
-            $ref: "#/components/schemas/PublicRankedContent"
+            $ref: "#/components/schemas/PublicRepresentativeContent"
           type: array
         sampleSize:
           description: >-
@@ -2462,6 +4396,104 @@ components:
         - uuid
         - viewCount
       type: object
+    PublicRepresentativeContent:
+      additionalProperties: false
+      properties:
+        authorReach:
+          type: number
+        commentCount:
+          type: number
+        contentType:
+          type: string
+          nullable: true
+        contentUrl:
+          type: string
+          nullable: true
+        creatorId:
+          type: number
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        engagementDepth:
+          type: number
+        engagementScore:
+          type: number
+        enrichment:
+          $ref: "#/components/schemas/PublicEnrichment"
+        exampleRankingScore:
+          type: number
+        followerCount:
+          type: number
+          nullable: true
+        intentEvidenceSource:
+          enum:
+            - authored_text
+            - no_match
+            - no_text
+            - tag_only
+          type: string
+        intentSimilarity:
+          type: number
+          nullable: true
+        likeCount:
+          type: number
+        platform:
+          type: string
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+        rawSimilarity:
+          type: number
+        recencyScore:
+          type: number
+        relevance:
+          type: number
+        rrfScore:
+          type: number
+        shareCount:
+          type: number
+        similarity:
+          type: number
+        tags:
+          items:
+            type: string
+          type: array
+        title:
+          type: string
+          nullable: true
+        uuid:
+          type: string
+        viewCount:
+          type: number
+      required:
+        - authorReach
+        - commentCount
+        - engagementDepth
+        - engagementScore
+        - exampleRankingScore
+        - likeCount
+        - rawSimilarity
+        - recencyScore
+        - rrfScore
+        - shareCount
+        - similarity
+        - tags
+        - uuid
+        - viewCount
+      type: object
+    SearchNarrativeSource:
+      enum:
+        - emergent
+        - tracked
+      type: string
+    SearchWindow:
+      enum:
+        - 30d
+        - 7d
+        - all
+      type: string
   headers:
     CreditsUsed:
       description: Credits consumed by this call (reserved estimate on a 202; actual

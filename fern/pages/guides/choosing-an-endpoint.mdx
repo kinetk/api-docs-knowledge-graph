@@ -1,0 +1,65 @@
+---
+title: Choosing the Right Call
+description: Which endpoint answers which question, and the patterns that keep calls fast and cheap.
+---
+
+KINETK has three kinds of call. Picking the right one is most of what makes an integration fast and cheap.
+
+| Kind of call | Endpoints | Speed | Cost |
+|---|---|---|---|
+| **Precomputed reads** — the narrative and pattern maps, rebuilt on a schedule | `GET /narratives/*`, `GET /intelligence/patterns/*` | under 2 s | free |
+| **Synchronous search** — one bounded, live retrieval | `POST /search` | a few seconds | $0.010 per row returned |
+| **Async jobs** — deep retrieval and analysis over the live corpus | `POST /intelligence/jobs` (`records`, `insights`, `patterns`, `stats`) | 10 s to a few minutes | per record or flat |
+
+## Which call answers my question?
+
+| You want to… | Call | Why |
+|---|---|---|
+| Show what's trending right now | `GET /narratives/trending` | Precomputed, free, instant. |
+| Find narratives about a topic that already exist | `GET /narratives/search?q=…` | Searches the precomputed map by name and tags. |
+| Drill into one narrative: its posts, creators, platform split | `GET /narratives/{id}` | Ids come from trending, search, `POST /search` and `insights`. |
+| See whether a narrative is accelerating or fading | `GET /narratives/{id}/trajectory` | Its metric history across rebuilds. |
+| Give an agent fresh content + context for a query, many times per task | `POST /search` | One call returns ranked posts *and* the narratives, patterns and creators they belong to. |
+| Pull hundreds or thousands of matching posts | `records` job | Up to 10,000 records per job; large results come back as a download link. |
+| Get the analytical "so what" about a topic | `insights` job | Narratives with trajectory and sentiment, tag and theme signals, platform opportunities. |
+| Understand what content *looks like* and how visual themes connect | `GET /intelligence/patterns/*` or a `patterns` job | The pattern map clusters posts by image/video similarity, not tags. |
+| Size a topic: how many posts, how much engagement, which platforms | `stats` job | An exact count over everything matching, not a sample. |
+
+## Recipes
+
+### An agent researching a topic
+
+1. `POST /search` with the user's question. Read `content` for evidence and `narratives` for the stories it belongs to.
+2. For a narrative worth explaining, `GET /narratives/{id}` for its full evidence, and `GET /narratives/{id}/trajectory` for its momentum.
+3. If the agent needs the full analysis, submit an `insights` job and poll it while the agent keeps working.
+
+Each step hands the next an id, so the agent walks the graph instead of re-searching.
+
+### A dashboard
+
+Poll `GET /narratives/trending` per window for the headline cards, and link each card to `GET /narratives/{id}`. These reads are free and sub-second, so refresh as often as your UI needs. Use `GET /health` to show data freshness.
+
+### A weekly research report
+
+Submit one `insights` job per topic with `includeSignals: true` for the written takeaways, plus a `stats` job for the exact size of each topic. Both run async — submit them all, then poll.
+
+### Visual and creative research
+
+Start with `GET /intelligence/patterns` (browse) or a `patterns` job (match a question to the map). Follow a pattern's `lookalikes` to find topics that look alike but are tagged differently — connections keyword search will not surface.
+
+## Making calls fast and cheap
+
+- **Start with the free reads.** If a precomputed narrative or pattern answers the question, you don't need a live retrieval.
+- **Size `limit` to what you will read.** On `POST /search` and `records` you pay per row returned, and smaller limits come back faster.
+- **Pick the narrowest `window` that answers the question.** It doesn't change the price, but `7d` and `30d` retrieve fresher, more focused evidence than `all`.
+- **Keep `POST /search` for interactive loops.** If you need more than 300 rows or a full analysis, submit a job instead of paging through search.
+- **Expect a `202` from `POST /search` now and then.** When a search runs past its time budget it hands the question to an `insights` job and returns a `jobId` — poll it like any other job.
+- **Send an `Idempotency-Key` when you retry a search,** so a network retry never pays twice.
+- **Don't resubmit a running job.** An identical submit while the first is running returns the same `jobId` (`dedup: true`); just poll.
+- **Poll jobs every 2–5 seconds,** and allow up to a few minutes for `window: "all"` and large pulls.
+- **Leave `includeGraphs` off on `insights`** unless you are drawing the graph — it makes the payload much larger.
+- **Use `returnRecords` on `insights`** only when you need the evidence posts inline; narratives already carry their representative posts.
+
+## Through an AI assistant
+
+If you work in Claude, ChatGPT, Cursor or another MCP client, the [hosted MCP](../mcp/hosted-mcp.mdx) exposes the narrative reads, the pattern map and the async jobs as tools. Mention **kinetk** in your prompt so the assistant uses them. See [MCP Tools](../mcp/tools.mdx) for which tool maps to which call.

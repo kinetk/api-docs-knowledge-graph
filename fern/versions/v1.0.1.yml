@@ -17,14 +17,22 @@ navigation:
             path: ../pages/getting-started/authentication.mdx
           - page: Quickstart
             path: ../pages/getting-started/quickstart.mdx
+          - page: Pricing & Credits
+            path: ../pages/getting-started/pricing.mdx
       - section: Guides
         contents:
-          - page: The Content Object
-            path: ../pages/guides/content-object.mdx
+          - page: Choosing the Right Call
+            path: ../pages/guides/choosing-an-endpoint.mdx
+          - page: Search
+            path: ../pages/guides/search.mdx
           - page: Narrative Intelligence
             path: ../pages/guides/narrative-intelligence.mdx
+          - page: Pattern Intelligence
+            path: ../pages/guides/pattern-intelligence.mdx
           - page: Intelligence Jobs
             path: ../pages/guides/intelligence-jobs.mdx
+          - page: The Content Object
+            path: ../pages/guides/content-object.mdx
           - page: Sync & Freshness
             path: ../pages/guides/sync-and-freshness.mdx
       - section: MCP Server

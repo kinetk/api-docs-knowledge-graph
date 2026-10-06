@@ -3,11 +3,7 @@ title: MCP Installation
 description: Install the kinetk MCP server in Claude Code, Claude Desktop, Cursor, Windsurf, Gemini CLI, and ChatGPT.
 ---
 
-<Callout intent="info">
-  This page installs the **local** package, which exposes the three original context-job tools (`create_context_job`, `get_context_job_status`, `get_context_job_result`). The narrative and pattern tools are only on the [Hosted MCP](./hosted-mcp.mdx), which needs no install — use it unless you need to pin or fork a build.
-</Callout>
-
-The local `kinetk` MCP runs over **stdio** — clients launch it as a subprocess and speak JSON-RPC on its stdin/stdout. You'll point each client at the built `dist/index.js` and pass two env vars: the API base URL and your API key.
+The `kinetk` MCP runs over **stdio** — clients launch it as a subprocess and speak JSON-RPC on its stdin/stdout. You'll point each client at the built `dist/index.js` and pass two env vars: the API base URL and your API key.
 
 ## 1. Get the server
 
@@ -158,4 +154,4 @@ The client should call `create_context_job` with `kind: "records"` (the content 
 | Client doesn't list `kinetk` | Config path wrong, or JSON malformed | Re-check the config file path; validate JSON with `jq < config.json`. |
 | `spawn ENOENT` | Wrong `node` path | Re-run `which node` and paste the exact path. |
 | `GRAPH_SERVICE_URL is required` | env not passed to subprocess | Confirm the `env` block is on the MCP entry, not at the top level. |
-| `403 Forbidden` on every tool call | Wrong or missing API key | Re-paste `GRAPH_SERVICE_API_KEY`, and check `GRAPH_SERVICE_URL` is `https://api.kinetk.ai/graph`. |
+| `403 Forbidden` on every tool call | Wrong or missing API key | Re-paste `GRAPH_SERVICE_API_KEY`. Dev keys hit `api.dev.kinetk.ai`; prod keys hit `api.kinetk.ai`. |

@@ -1,137 +1,155 @@
 ---
 title: Intelligence Jobs
-description: The async job lifecycle — submit, poll, cache, dedup.
+description: The async job lifecycle — the four kinds, their inputs, submit, poll, cache and dedup.
 ---
 
-All heavy intelligence work runs through one async endpoint pair:
+Deep retrieval and analysis run through one async endpoint pair:
 
-- `POST /intelligence/jobs` — submit a job, get a `jobId` immediately.
-- `GET /intelligence/jobs/{id}` — poll status; once `succeeded`, the response carries the result.
+- `POST /intelligence/jobs` — submit a job and get a `jobId` back immediately.
+- `GET /intelligence/jobs/{id}` — poll its status; once it has `succeeded`, the response carries the result.
 
-This page covers the lifecycle, the two supported `kind` values, the cache + dedup semantics, and the failure modes.
+Jobs are async because they do real work — multimodal vector search across the corpus, relational joins, clustering and LLM passes — that can take from about ten seconds to a few minutes. Submit returns in well under a second; the job itself has up to 15 minutes.
 
-## Why async
+For a quick, bounded answer in one synchronous call, use [`POST /search`](./search.mdx) instead.
 
-The intelligence pipeline does real work: text embeddings, multimodal vector search fan-out, relational joins, KMeans clustering, two LLM calls. Typical end-to-end latency is 5–20 seconds. The synchronous API path caps at ~29 seconds, so heavy work runs async — submit returns in under 500 ms, and the worker has a 5-minute budget.
+## The four kinds
 
-## Supported kinds
+| `kind` | Returns | Use when | Price | Cache |
+|---|---|---|---|---|
+| `records` | Ranked content rows, plus a relationship `graph` | You want the matching posts themselves — hundreds to thousands of them. | $0.010 per record returned | 15 min |
+| `insights` | Narratives with corpus trajectory and sentiment, tag/theme signals, platform opportunities | You want the analytical "so what" about a topic. | $0.015 per record analyzed (+$1.00 with `includeSignals`) | 1 h |
+| `patterns` | Matching visual patterns from the pattern map, with a written summary | You want to know what content looks like and how visual themes connect. | $10.00 flat | until 00:00 UTC |
+| `stats` | Exact totals: records, views, likes, comments, engagement — overall and per platform | You want to size a topic, not read it. | $5.00 flat | until 00:00 UTC |
 
-| `kind` | Input | Output | Cache window |
-|---|---|---|---|
-| `records` | `query` + filters | The matching content items | 15 min |
-| `insights` | `query`+ filters (+ optional `includeIntelligenceSignals`) | Structured narrative/tag/theme signals | 1 h |
+See [Pricing & Credits](../getting-started/pricing.mdx) for holds, settlement and the `402` budget advice.
 
-See the [API Reference](/api-reference) for full shapes.
+## Inputs
 
+### `records`
 
-**Input filters apply to the `records` + `insights` kind:**
+| Field | Required | Notes |
+|---|---|---|
+| `query` | yes | Free text. Hashtags in the query (`#fitness`) are also used to widen recall by tag. |
+| `window` | yes | `7d`, `30d` or `all`. |
+| `limit` | yes | How many records to buy, 100–10,000. There is no default: you choose the spend. `1000` is a sensible start. |
+| `platforms` | no | Any of `tiktok`, `instagram`, `reddit`, `pinterest`, `x`, `snapchat`. Defaults to all. |
 
-- `platforms`: e.g. `["TIKTOK", "INSTAGRAM"]`. Defaults to all.
-- `window`: `7d | 30d | all`. **Required** — there is no default; omitting it returns 400. Use `all` for no time filter. A `24h` window is coming soon.
-- `limit`: the number of records to retrieve, `100`–`10000`. **Required** — there is no default; omitting it returns 400, and a value above `10000` returns 400. Jobs are billed per record, so the limit is how you choose your spend (`1000` is a sensible starting point).
+### `insights`
 
-Additionally `insights` accepts an optional `includeIntelligenceSignals` boolean — set it to `true` to also get the LLM-written *signals* arrays (otherwise the result is structured data only).
+| Field | Required | Notes |
+|---|---|---|
+| `query` | yes | Free text. |
+| `window` | yes | `7d`, `30d` or `all`. |
+| `limit` | no | How many records to analyze. Omit it for the default depth — **1,500 for `7d`, 3,000 for `30d` and `all`**. Pass a lower number to cap cost, or a higher one (up to 10,000) for more depth. You pay for records actually analyzed. |
+| `includeSignals` | no | `true` adds LLM-written takeaways (`insights`, `tagInsights`, `narrativeInsights`) for +$1.00. Needs enough evidence: 375 analyzed records on `7d`, 750 on `30d`, 1,500 on `all`, or the job fails with a full refund. |
+| `returnRecords` | no | Also return the top N evidence posts in `content`. Default `0` — narratives already carry their representative posts. |
+| `includeGraphs` | no | Default `false`. `true` adds the graph views (`graph`, `narrativeGraph`, `tagGraph`, `contentGraph`) — much larger payload. |
+| `platforms` | no | Defaults to all. |
 
-## Submit response shapes
+### `patterns`
 
-A submit can return one of three things depending on dedup + cache state:
+| Field | Required | Notes |
+|---|---|---|
+| `query` | yes | Matched against the whole pattern map. |
+| `limit` | no | Patterns to return, default 8, max 25. |
+| `includeProse` | no | Default `true`. `false` skips the written summary. |
+
+No `window`: the pattern map covers the corpus's recent history as a whole. See [Pattern Intelligence](./pattern-intelligence.mdx).
+
+### `stats`
+
+| Field | Required | Notes |
+|---|---|---|
+| `query` | yes | Free text. |
+| `window` | no | `all` (default), `30d`, `7d` or `24h`. Bounded windows exclude posts with no publish date. |
+| `platforms` | no | Defaults to all. |
+
+`stats` returns `{ query, window, total, platforms[] }` — an exact count over everything matching, not a ranked sample, so there is no `limit` and no content rows.
+
+Any other field, or a value of the wrong type, is rejected with `400`.
+
+## Submit
+
+```bash
+curl -X POST "$API_BASE/intelligence/jobs" \
+  -H "x-api-key: $API_KEY" -H "content-type: application/json" \
+  -d '{ "kind": "records", "input": { "query": "sustainable sneakers", "window": "30d", "limit": 1000 } }'
+```
+
+A submit returns one of three shapes:
 
 ```jsonc
-// 1. Fresh — new work queued, credits reserved at the estimate
+// 1. New job — queued, credits held at the estimate
 HTTP 202
-{ "jobId": "...", "status": "queued", "estimated_cost": 1.333, "statusUrl": "/intelligence/jobs/..." }
+{ "jobId": "…", "status": "queued", "estimated_cost": 10, "statusUrl": "/intelligence/jobs/…" }
 
-// 2. Dedup — identical input already running, same jobId
+// 2. Dedup — the same job is already queued or running; same jobId, nothing new held
+//    (status is that job's real state: "queued" or "running")
 HTTP 202
-{ "jobId": "...", "status": "queued", "dedup": true, "statusUrl": "..." }
+{ "jobId": "…", "status": "running", "dedup": true, "statusUrl": "/intelligence/jobs/…" }
 
-// 3. Cache hit — succeeded result inline, no new run
+// 3. Cache hit — a recent identical job's result, returned inline
 HTTP 200
-{ "jobId": "...", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true, "charged": 1.2 }
+{ "jobId": "…", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true, "charged": 9.4 }
 ```
 
-Always check the HTTP status (`200` vs `202`) and the optional `fromCache` / `dedup` flags before deciding whether to start polling.
+Check the HTTP status (`200` vs `202`) before deciding whether to poll.
 
-## Large results — presigned download URL
-
-Responses from the job API have a size limit, so large results are not returned inline. When a job succeeds but its result is too large to return directly, the response omits the `result` field and instead includes a short-lived, presigned S3 URL. The client downloads the result directly from that URL.
-
-```json
-{
-  "jobId": "01931f7e-...",
-  "kind": "records",
-  "status": "succeeded",
-  "resultStorage": "s3",
-  "resultUrl": "https://...s3.amazonaws.com/jobs/<id>.json?X-Amz-Signature=...",
-  "resultBytes": 8200431,
-  "resultExpiresAt": "2026-06-11T05:37:09.000Z"
-}
-```
-
-**Client contract:** if `result` is absent and `resultStorage === "s3"`, `GET` the `resultUrl` to download the full JSON payload. The URL is valid for ~1 h (and never past the job's own TTL — see `resultExpiresAt`); if it has expired, just poll this endpoint again for a fresh one.
-
-## Billing & costs
-
-Jobs are paid in credits:
-
-- **Submit reserves, completion settles.** A fresh `202` includes `estimated_cost` — an upper bound computed from your requested `limit` and `window`, reserved at submit. The final charge is computed from the records actually returned (≤ the estimate) and the unused remainder is released. Cache hits (`200`) are charged at the full rate — the body's `charged` field is the cost.
-- **Insufficient balance → `402`.** The body includes `credits_required`, `credits_available` and a machine-readable recommendation: the largest affordable `limit` for your window, and (for `records`) per-window alternatives so you can trade freshness for volume.
-- **Headers.** Every billed response carries `X-Kinetk-Credits-Used` (this call) and `X-Kinetk-Credits-Remaining` (your balance).
-- **`insights` is flat-priced**: 0.5 credits per request for a fixed 3000-record scan. If the run matches fewer than 1500 records, the job fails (poll shows `status: "failed"` with a refine-your-query message) and the 0.5 credits are refunded in full.
-- **Failed jobs are fully refunded.** Any job that ends `failed` releases its entire reservation.
-
-## Polling
+## Poll
 
 ```bash
 curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
 ```
 
-Poll every 2–5 seconds. Status flows: `queued` → `running` → `succeeded` | `failed`.
+Poll every 2–5 seconds. Status flows `queued` → `running` → `succeeded` | `failed`. Most jobs finish in 10–40 seconds; `window: "all"` and large pulls commonly take 1–3 minutes. A long `running` is normal — allow up to about 5 minutes before treating a job as stuck.
 
 ```jsonc
 // running
-{ "jobId": "...", "kind": "insights", "status": "running",
+{ "jobId": "…", "kind": "insights", "status": "running",
   "submittedAt": 1745859300000, "startedAt": 1745859302100 }
 
 // succeeded
-{ "jobId": "...", "kind": "insights", "status": "succeeded",
+{ "jobId": "…", "kind": "insights", "status": "succeeded",
   "submittedAt": 1745859300000, "startedAt": 1745859302100, "completedAt": 1745859315400,
-  "result": { /* signals payload — see API reference */ } }
+  "result": { /* see the API Reference */ } }
 
-// failed
-{ "jobId": "...", "status": "failed",
-  "error": "embedding service failed (403): permission denied",
-  "submittedAt": ..., "startedAt": ..., "completedAt": ... }
+// failed — the hold is refunded in full
+{ "jobId": "…", "kind": "insights", "status": "failed", "error": "…" }
 ```
 
-Status response codes:
-
-| Status | Body |
+| Status | Meaning |
 |---|---|
-| `200` | Any job state (`queued` / `running` / `succeeded` / `failed`) |
-| `404` | `{ "error": "job not found" }` — wrong `jobId` |
-| `410` | `{ "error": "job result expired" }` — job is older than its TTL (~24 h after completion) |
+| `200` | The job, in any state. |
+| `404` | No such job for your account. |
+| `410` | The job expired — results are kept for about 24 hours after completion. |
 
-## Cache semantics
+### Large results — download link
 
-Submit computes `inputHash = sha256(canonicalJson({ kind, input }))` and checks for a recent successful job with the same hash. If one exists within the per-kind freshness window above, the cached result is returned inline (status `200`, `fromCache: true`) — charged at the full rate. To get fresher data, vary the input (e.g. a different `window`) or wait for the freshness window to lapse.
+Large results (typically big `records` pulls) are too big to return inline. The response then omits `result` and includes a short-lived download link instead:
 
-## Dedup semantics
+```json
+{
+  "jobId": "01931f7e-…",
+  "kind": "records",
+  "status": "succeeded",
+  "resultStorage": "s3",
+  "resultUrl": "https://…",
+  "resultBytes": 8200431,
+  "resultExpiresAt": "2026-06-11T05:37:09.000Z"
+}
+```
 
-Two **concurrent** identical submits will both hit the dedup check. The first creates a row and enqueues; the second observes the `queued`/`running` row and returns the same `jobId` with `dedup: true`. No second SQS message is sent — both pollers converge on the same result.
+If `result` is absent and `resultStorage` is `"s3"`, `GET` the `resultUrl` for the full JSON. The link lasts about an hour; if it has expired, poll the job again for a fresh one.
 
-There's a small race window where two submits arriving in the same millisecond can both miss the dedup check and both queue. In that case both jobs run independently and produce identical results — the cost is duplicate work, not data corruption. This is documented as a v1 accepted trade-off.
+## Cache and dedup
 
-## TTL
+- **Cache.** A submit identical to a recent successful job — same `kind` and same input — returns that job's result inline (`200`, `fromCache: true`) instead of running again. `records` and `insights` cache hits are charged at the full rate; `patterns` and `stats` are free to re-read for the account that paid, until 00:00 UTC. To get a fresh run, change the input or wait for the window to pass.
+- **Dedup.** A submit identical to a job that is still `queued` or `running` returns that job's `jobId` with `dedup: true`. Nothing new runs and nothing new is held — just poll the same id.
 
-Job rows are deleted from DynamoDB ~24 hours after completion. After that, `GET /intelligence/jobs/{id}` returns `410 { "error": "job result expired" }`. Persist anything you need long-term on your side.
+## Keep the results
 
-## Using the MCP instead
+Jobs are deleted about 24 hours after they finish, after which `GET /intelligence/jobs/{id}` returns `410`. Store anything you need longer on your side.
 
-If polling-loop boilerplate is a pain — especially inside an AI coding agent — install the `kinetk` MCP server. It exposes three tools that wrap the same flow:
+## Through the MCP
 
-- `create_context_job` → `POST /intelligence/jobs` (handles cache hit, dedup, retries)
-- `get_context_job_status` → cheap poll
-- `get_context_job_result` → slim or verbose envelope
-
-See [MCP Installation](../mcp/installation.mdx).
+In an AI assistant, the hosted MCP's `kinetk_get_context` tool submits a job and waits for it in one call, and `kinetk_create_context_job` / `kinetk_get_context_job_status` / `kinetk_get_context_job_result` give you the same submit-and-poll loop as tools. See [MCP Tools](../mcp/tools.mdx).
