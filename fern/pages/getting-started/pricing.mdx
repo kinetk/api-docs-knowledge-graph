@@ -1,0 +1,93 @@
+---
+title: Pricing & Credits
+description: What every call costs, how holds and settlement work, and how to keep spend predictable.
+---
+
+KINETK is metered in **credits**. Buy credits from the [KINETK platform](https://platform.kinetk.ai); every billed call draws them down from your account's balance.
+
+**Base unit:** 1 credit = $1.00 USD.
+
+## Price list
+
+| What you call | Price | Charged on |
+|---|---|---|
+| `POST /search` | **0.01 credits per record** | records actually returned |
+| `POST /intelligence/jobs` — `records` | **0.01 credits per record** | records actually returned |
+| `POST /intelligence/jobs` — `insights` | **0.015 credits per record** | records actually analyzed |
+| `POST /intelligence/jobs` — `patterns` | **10 credits per call** | flat |
+| `POST /intelligence/jobs` — `stats` | **5 credits per call** | flat |
+| `GET /narratives/*`, `GET /intelligence/patterns/*`, `GET /health`, `GET /usage` | **free** | — |
+
+**Signals add-on:** adding `includeSignals: true` to an `insights` job is a flat **1 credit** per call on top of the per-record price.
+
+**Price never depends on `window`.** `window` chooses *what* to retrieve over, not what it costs: a 7-day query and an all-time query at the same size cost the same.
+
+### Typical calls
+
+| Call | Cost |
+|---|---|
+| `POST /search` at the default `limit` of 100, full answer | 1 credit |
+| `POST /search` with `limit: 20` | at most 0.2 credits |
+| `records` job, `limit: 1000` | at most 10 credits |
+| `insights` job, `window: "7d"` (default depth 1,500) | at most 22.5 credits |
+| `insights` job, `window: "30d"`, `"90d"` or `"all"` (default depth 3,000) | at most 45 credits — 46 with `includeSignals` |
+| `patterns` job | 10 credits |
+| `stats` job | 5 credits |
+
+A search row and a `records` record cost the same: `POST /search` is the fast, synchronous way to get a small set of rows, and a `records` job is the way to get thousands.
+
+## Holds and settlement
+
+Every billed call works the same way:
+
+1. **Hold.** Before any work runs, the maximum the call could cost is reserved from your balance — `limit` × the per-row/per-record rate, or the flat fee.
+2. **Settle.** When the work finishes you are charged for what was actually delivered, and the rest of the hold is released. A search or `records` job that returns 40 rows out of a `limit` of 100 costs 40 rows. **An empty answer costs nothing** on the per-row and per-record kinds.
+3. **Refund.** A call that fails — or a search that runs out of time and is handed to an async job — releases its whole hold.
+
+The flat-fee kinds (`patterns`, `stats`) settle at their fee even when they find nothing: the work ran either way. Only a *failed* job is refunded.
+
+### `includeSignals` floors
+
+The `includeSignals` add-on writes LLM prose about the result, which needs enough evidence to be worth writing. Each window has a floor on the records analyzed: **7d 375 · 30d 750 · 90d 750 · all 1,500.** An explicit `limit` below the floor is rejected with `400` at submit, and a run that analyzes fewer records than the floor fails with `422` and a **full refund**.
+
+## Caching and re-reads
+
+Identical requests within a freshness window are answered from cache instead of re-running:
+
+| Kind | Cache window | Re-read cost |
+|---|---|---|
+| `records` | 15 minutes, rolling | full price |
+| `insights` | 1 hour, rolling | full price |
+| `patterns`, `stats` | until the next 00:00 UTC | **free** for the account that paid; full price for any other account |
+
+A cache hit returns `200` with the result inline and a `charged` field saying what it cost.
+
+## Seeing what you spent
+
+- **Headers.** Every billed response carries `X-Kinetk-Credits-Used` (this call) and `X-Kinetk-Credits-Remaining` (your balance after it).
+- **Response body.** `POST /search` reports `usage.credits`; a job submit reports `estimated_cost` (the hold), and a cache hit reports `charged`.
+- **History.** `GET /usage` lists your account's ledger newest-first — top-ups, settlements and refunds — with cursor pagination and an optional `keyId` filter.
+
+## Running out of credits — `402`
+
+A call your balance cannot cover is rejected with `402` before anything runs, and nothing is charged:
+
+```json
+{
+  "error": "insufficient_credits",
+  "credits_required": 1.0,
+  "credits_available": 0.35,
+  "recommendations": { "maxLimitForWindow": 35, "topUpUrl": "https://platform.kinetk.ai/billing" }
+}
+```
+
+`maxLimitForWindow` is the largest `limit` your remaining balance still covers — retry with it, or top up. It is `0` for the flat-fee kinds, whose price does not depend on `limit`, and for `insights` when the balance can't cover the window's minimum analysis depth.
+
+## Keeping spend predictable
+
+- **Set `limit` to what you will use.** The hold is sized from it, and on `POST /search` and `records` you never pay for more rows than come back.
+- **Send an `Idempotency-Key` on `POST /search` retries.** A retry with the same key and body collapses onto the original charge instead of paying twice.
+- **Reuse cached answers.** Asking the same `records` question twice within 15 minutes, or the same `insights` question within an hour, returns the cached result — but still at full price, so keep the first result rather than re-asking.
+- **Use the free reads for browsing.** Trending narratives, narrative search and the pattern map are free; reach for a paid call when you need fresh retrieval over the live corpus.
+
+See [Choosing the Right Call](../guides/choosing-an-endpoint.mdx) for which endpoint fits which job.

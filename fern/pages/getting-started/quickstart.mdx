@@ -1,150 +1,150 @@
 ---
 title: Quickstart
-description: Your first request — from health check to running an async intelligence job.
+description: Get an API key, try every query in the Playground, then call the API from your own code.
 ---
 
-Five minutes from `curl` to a real `insights` result. Pick any HTTP client you like; we use `curl` here.
+The fastest way to see what KINETK returns is the Playground. You don't write any code there, and every query in these docs can be run from it.
 
-## Prerequisites
+## 1. Get an API key
+
+Sign in to the [KINETK platform](https://platform.kinetk.ai), open **API keys**, and create one. Keys look like `ktk_live_…`. The secret is shown **once**, when you create it, so store it right away. You can't retrieve it later, only revoke it and issue a new one.
+
+Paid calls use credits (1 credit = $1.00 USD), which you buy on the platform's [billing page](https://platform.kinetk.ai/billing). The narrative and pattern reads are free. See [Pricing & Credits](./pricing.mdx).
+
+## 2. Head to the Playground
+
+Open the [Playground](https://platform.kinetk.ai/playground). Ask a question in plain English, pick a time window and analysis depth, and run it against the live API. The result opens as a visual report, and the complete JSON is one click away.
+
+![The KINETK Playground](../../assets/playground1.png)
+
+Each Playground tab runs one of the [analysis jobs](../guides/intelligence-jobs.mdx):
+
+| Tab | What it answers | API equivalent |
+|---|---|---|
+| **Insights** | Narratives and opportunities around a question | `POST /intelligence/jobs` with `kind: "insights"` |
+| **Patterns** | Persistent structures in the conversation | `kind: "patterns"` |
+| **Stats** | Exact totals for a topic | `kind: "stats"` |
+
+The Playground uses your signed-in account, so you don't paste a key. Runs are charged to your account like any API call. Before you run, it shows the estimated maximum credits, and you're billed only for the records actually analyzed. Use it to find the right question, window and depth, then copy those settings into your code.
+
+## 3. Call the API from your code
+
+<Card title="Try it in the API Reference" icon="play" href="/api-reference">
+  Every endpoint has a **Try it** button. Paste your key and send real requests from your browser, no setup needed.
+</Card>
+
+When you're ready to integrate, export your base URL and key. Every example in these docs uses them:
 
 ```bash
 export API_BASE="https://api.kinetk.ai/graph"
 export API_KEY="<paste your key here>"
 ```
 
-If you don't have a key yet, see [Authentication](./authentication.mdx). The production base URL is `https://api.kinetk.ai/graph` — see [Introduction](../introduction.mdx#base-url).
-
-## 1. Health check
+### Check the service
 
 ```bash
 curl -H "x-api-key: $API_KEY" "$API_BASE/health"
 ```
 
-Expected response (status `200`, latency under 1 second):
+A `200` with `"status": "ok"` means the service is up and its data is fresh. `sync.minutesSinceLastRun` shows how recently new content was ingested. See [Sync & Freshness](../guides/sync-and-freshness.mdx).
 
-```json
+### Search
+
+`POST /search` returns ranked content for a query in one synchronous call, along with the narratives and creators that content belongs to:
+
+```bash
+curl -X POST "$API_BASE/search" \
+  -H "x-api-key: $API_KEY" -H "content-type: application/json" \
+  -d '{ "query": "sneaker drops", "window": "7d", "limit": 20 }'
+```
+
+```jsonc
 {
-  "ok": true,
-  "lastSyncedAt": "2026-04-28T17:32:11.000Z",
-  "syncFreshSeconds": 1432
+  "query": "sneaker drops",
+  "window": "7d",
+  "content": [ { "uuid": "…", "platform": "TIKTOK", "title": "…", "narrativeIds": ["4182"] } ],
+  "narratives": [ { "id": "4182", "label": "Limited sneaker drop hype", "source": "tracked" } ],
+  "patterns": [],
+  "creators": [ { "creatorId": 1234, "platform": "TIKTOK", "hits": 3, "followerCount": 120000 } ],
+  "usage": { "credits": 0.2 }
 }
 ```
 
-`syncFreshSeconds` tells you how recently the ingestion pipeline ran. Under `3600` (one hour) means data is fresh. Much higher and the hourly sync is lagging — see [Sync & Freshness](../guides/sync-and-freshness.mdx).
+This call costs 0.01 credits per record returned, so **20 records cost 0.2 credits.** See [Search](../guides/search.mdx).
 
-If you get `403 { "message": "Forbidden" }`, the API key isn't being sent — check the header name and value.
+### Drill into a narrative (free)
 
-## 2. Submit an async intelligence job
+Take a narrative `id` from the search and read its full evidence:
 
-Both the `records` and `insights` kinds run async because they can take 5–20 seconds. Submit returns immediately with a `jobId`:
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/narratives/4182"
+```
+
+You get its member posts, top creators and per-platform breakdown. To browse what's trending without a query:
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/narratives/trending?window=7d&limit=10"
+```
+
+The precomputed narrative and pattern reads are free. See [Narrative Intelligence](../guides/narrative-intelligence.mdx).
+
+### Run a full analysis (async)
+
+This is the same analysis as the Playground's **Insights** tab: narratives with corpus trajectory and sentiment, tag and theme signals, and platform opportunities. Submit an `insights` job:
 
 ```bash
 curl -X POST "$API_BASE/intelligence/jobs" \
-  -H "x-api-key: $API_KEY" \
-  -H "content-type: application/json" \
+  -H "x-api-key: $API_KEY" -H "content-type: application/json" \
   -d '{
     "kind": "insights",
-    "input": {
-      "query": "smart watch launch",
-      "window: "7d",
-      "limit: 3000
-    }
+    "input": { "query": "sneaker drops", "window": "7d", "limit": 500 }
   }'
 ```
 
-`insights` takes `query` (required) plus an optional `includeIntelligenceSignals` boolean; everything else (time window, scan size, platforms) is managed by the service for this kind, and any other field returns `400`. The `records` kind accepts filters and **requires** an explicit `window` and `limit` — see [Intelligence Jobs](../guides/intelligence-jobs.mdx).
-
-Three possible responses:
-
-```jsonc
-// Fresh submit — new work queued, credits reserved at the estimate:
-{ "jobId": "0190bd6f-...", "status": "queued", "estimated_cost": 0.5, "statusUrl": "/intelligence/jobs/0190bd6f-..." }
-
-// Cache hit — identical input within freshness window, inline result:
-{ "jobId": "0190bd6f-...", "status": "succeeded", "result": { /* full payload */ }, "fromCache": true }
-
-// Dedup — identical input already running, same jobId returned:
-{ "jobId": "0190bd6f-...", "status": "queued", "dedup": true, "statusUrl": "/intelligence/jobs/0190bd6f-..." }
-```
-
-Save the `jobId`:
-
-```bash
-JOB="0190bd6f-..."
-```
-
-## 3. Poll for the result
-
-```bash
-curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/$JOB"
-```
-
-Poll every 2–5 seconds until `status` flips from `queued` → `running` → `succeeded`. Typical end-to-end time for `insights`: 5–20 seconds.
-
-```jsonc
-// While running:
-{ "jobId": "0190bd6f-...", "kind": "insights", "status": "running", "submittedAt": 1745859300000, "startedAt": 1745859302100 }
-
-// When done:
-{
-  "jobId": "0190bd6f-...",
-  "kind": "insights",
-  "status": "succeeded",
-  "submittedAt": 1745859300000,
-  "startedAt":   1745859302100,
-  "completedAt": 1745859315400,
-  "result": { /* signals payload — see API reference */ }
-}
-```
-
-## 4. Skip the polling — use the MCP
-
-If you'd rather have Claude or Cursor handle the submit/poll loop for you, install the `kinetk` MCP server — see [MCP Installation](../mcp/installation.mdx). The MCP exposes the same `insights` flow as a one-tool call with built-in polling and a slim, token-efficient response envelope.
-
-## 5. Trending narratives (precomputed read)
-
-<Callout intent="info" icon="rocket">
-  ### Coming soon
-
-  The trending narratives endpoints and full documentation are on the way. Check back shortly.
-</Callout>
-
-{/* ---------------------------------------------------------------------------
-COMMENTED OUT — restore when the precomputed narratives endpoints are ready.
-
-```bash
-curl -H "x-api-key: $API_KEY" \
-  "$API_BASE/narratives/trending?window=7d&limit=10"
-```
-
-Sub-second response with the top 10 trending narrative clusters in the last 7 days:
+`limit` sets how many records to analyze. At 0.015 credits per record, this job costs at most **7.5 credits**. If you omit it, you get the default depth (1,500 records on `7d`). The submit returns immediately:
 
 ```json
-{
-  "window": "7d",
-  "narratives": [
-    {
-      "id": "1234",
-      "label": "Smartwatch fitness accountability",
-      "summary": "Creators in the smartwatch + fitness space leaning into community accountability framing...",
-      "window": "7d",
-      "trendScore": 0.82,
-      "momentumScore": 0.74,
-      "topTags": ["smartwatch", "fitness"],
-      "contentCount": 28,
-      "creatorCount": 16,
-      "totalEngagement": 1240501
-    }
-  ]
-}
+{ "jobId": "0190bd6f-…", "status": "queued", "estimated_cost": 7.5, "statusUrl": "/intelligence/jobs/0190bd6f-…" }
 ```
 
-Windows: `7d | 30d`. Limit: 1–50.
+Poll until it succeeds:
 
---------------------------------------------------------------------------- */}
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/jobs/0190bd6f-…"
+```
+
+Poll every 2–5 seconds. `status` goes `queued` → `running` → `succeeded`, usually within a minute. The final response has the analysis in `result`. See [Intelligence Jobs](../guides/intelligence-jobs.mdx) for all four job kinds.
+
+## 4. Or let your AI assistant do it
+
+Connect the [hosted MCP](../mcp/hosted-mcp.mdx) to Claude, ChatGPT, Cursor or Codex and ask in plain English, for example *"use kinetk to find what's trending in sneaker drops this week"*. The assistant searches narratives, walks the pattern map and runs jobs for you.
+
+## Authentication
+
+Every API endpoint requires your secret key in the `x-api-key` header:
+
+```bash
+curl -H "x-api-key: $API_KEY" "https://api.kinetk.ai/graph/health"
+```
+
+Each key is tied to a usage plan with per-second and per-day rate limits. The defaults are generous for development. Contact **api@kinetk.ai** for higher production limits.
+
+### Failure modes
+
+| Status | Body | Cause |
+|---|---|---|
+| `403` | `{ "message": "Forbidden" }` | Missing or invalid `x-api-key`. Check the header name (case-insensitive) and that the value matches your issued key. |
+| `402` | `{ "error": "insufficient_credits", … }` | Your balance can't cover the call. The body says the largest `limit` you can afford. See [Pricing & Credits](./pricing.mdx). |
+| `429` | `{ "message": "Too Many Requests" }` | You exceeded the per-second or per-day quota. Back off and retry. If you need a higher limit, contact us. |
+
+### Best practices
+
+- **Store keys in env vars or a secret manager**, never in committed code. For AI assistants, use the [hosted MCP](../mcp/hosted-mcp.mdx)'s sign-in where your client supports it, so you don't paste a key at all.
+- **Use separate keys per environment** so a leaked dev key never touches production traffic.
+- **Rotate keys when team members leave** or after any suspected exposure. Revoke and re-create them in the platform; revocation takes effect immediately.
 
 ## Next steps
 
-- [Intelligence Jobs](../guides/intelligence-jobs.mdx) — the full async lifecycle, both `kind` values, dedup + cache semantics, billing.
-- [Narrative Intelligence](../guides/narrative-intelligence.mdx) — what `insights` actually returns and how to read it.
-- [API Reference](/api-reference) — every endpoint, every field, every error shape.
+- [Choosing the Right Call](../guides/choosing-an-endpoint.mdx): which endpoint fits which question, and how to keep costs down.
+- [Pricing & Credits](./pricing.mdx): what each call costs and how holds work.
+- [API Reference](/api-reference): every endpoint, field and error.

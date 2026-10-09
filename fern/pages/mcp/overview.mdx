@@ -1,64 +1,35 @@
 ---
 title: MCP Overview
-description: The two ways to run the kinetk MCP server — hosted and local — and what it exposes.
+description: Use the KINETK graph from Claude, ChatGPT, Cursor and other AI assistants through the kinetk MCP server.
 ---
 
-The **`kinetk` MCP server** is a [Model Context Protocol](https://modelcontextprotocol.io) server that wraps the heavy KINETK async-job API as agent-friendly tools. Your prompt mentions `kinetk` and the LLM submits real retrieval jobs, polls them, and gets back token-efficient response envelopes.
+The **`kinetk` MCP server** is a [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the KINETK Knowledge Graph as tools inside your AI assistant. Mention **kinetk** in a prompt and the assistant browses trending narratives, walks the visual pattern map and runs live retrieval jobs for you, getting back token-efficient answers.
 
-There are **two ways to run it** — both expose the same tools, hit the same [Graph Service](https://api.kinetk.ai/graph) backend, and bill the same account:
+## Two ways to run it
 
-| | **Hosted MCP** (remote) | **Local MCP** (stdio) |
+| | **Hosted MCP** (recommended) | **Local MCP** (advanced, self-run) |
 |---|---|---|
-| What it is | A managed HTTP endpoint KINETK hosts for you | The `kinetk-mcp` package you run as a subprocess |
-| Setup | Nothing to install — sign in (OAuth) or pass an `x-api-key` header | Clone, `npm install`, `npm run build`, point your client at `dist/index.js` |
-| Transport | HTTP / SSE | stdio |
-| Auth | OAuth sign-in **or** API key | API key via env var |
-| Best for | Claude Desktop, ChatGPT, Claude Code, Cursor, Gemini CLI — anything that supports remote connectors | Pinning a specific version, local/offline dev, custom forks |
-| Guide | [Hosted MCP](./hosted-mcp.mdx) | [Installation](./installation.mdx) |
+| What it is | A managed endpoint KINETK runs for you | The `kinetk-mcp` package you run as a subprocess |
+| Setup | Nothing to install — sign in, or pass an `x-api-key` header | Clone, build, and point your client at it |
+| Tools | The full set: context jobs, narratives, patterns, search/fetch | The three original context-job tools only |
+| Best for | Claude Desktop, ChatGPT, Claude Code, Codex, Cursor, Gemini, Grok | Pinning a specific build, or custom forks |
+| Guide | [Hosted MCP Setup](./hosted-mcp.mdx) | [Local MCP (Advanced)](./local-mcp.mdx) |
 
-Most users want the **[Hosted MCP](./hosted-mcp.mdx)** — there's nothing to install. Reach for the local package when you need to pin a version or run a modified build; its source lives in [`mcp-server/`](https://github.com/kinetk/api-docs-knowledge-graph/tree/main/mcp-server). Per-tool reference (same for both): [Tools](./tools.mdx).
+Most users want the **[Hosted MCP](./hosted-mcp.mdx)**: it is always current and has every tool. Both bill the same account at the same prices as the [HTTP API](../getting-started/pricing.mdx).
 
-## What the MCP exposes
+## What you can do with it
 
-Three tools that map to the async job lifecycle:
+Ask your assistant what's trending, dig into a narrative, run a full analysis, explore what content looks like, or pull posts to cite. See [What You Can Ask](./what-you-can-ask.mdx) for example prompts and what each costs.
 
-| Tool | Purpose |
-|---|---|
-| `create_context_job` | Submit either `kind` (`records` or `insights`). Returns `{ jobId, kind, status, fromCache }`. |
-| `get_context_job_status` | Cheap poll. Returns `{ jobId, kind, status, submittedAt, startedAt, completedAt, error? }`. |
-| `get_context_job_result` | Fetch the result. Defaults to a **slim envelope** (token-efficient); `verbose: true` returns the full graph-service payload. |
-
-Underneath, these talk HTTPS to the deployed [Graph Service](https://api.kinetk.ai/graph) via `POST /intelligence/jobs` and `GET /intelligence/jobs/{id}`. The MCP itself is stateless — all retrieval state lives in the backend.
-
-## When to use the MCP vs the raw API
+## When to use the MCP vs the API
 
 | Use case | Pick |
 |---|---|
-| You're using Claude Code, Cursor, Gemini CLI, Windsurf, or Claude Desktop and want the agent to fetch context for you | **MCP** |
-| You're prototyping an agent loop that orchestrates multiple intelligence queries | **MCP** |
-| You're building a backend service, scheduled job, or dashboard | **Raw API** |
-| You need an endpoint the MCP doesn't expose (e.g. `/narratives/trending`, `/health`) | **Raw API** |
+| You work in an AI assistant and want it to fetch live context | **MCP** |
+| You're exploring a topic conversationally — trending, drill-down, related patterns | **MCP** |
+| You're building a backend, scheduled job or dashboard | **API** |
+| You need `POST /search`, `stats` jobs, `GET /usage` or `GET /health` | **API** — these aren't exposed as tools |
 
-The MCP intentionally surfaces only the async `intelligence/jobs` flow. The precomputed narrative reads (`/narratives/*`) and `/health` are direct sync reads — there's no agent benefit to wrapping them, so they live only in the [API Reference](/api-reference).
+## Why slim results?
 
-## Why a slim envelope?
-
-Graph-service results can be 100s of KB. AI agents pay per token, so by default the MCP returns a slim envelope per kind:
-
-- `records`: per-content rows (`id`, `platform`, `title`, `tags`, `similarity`, `engagement`, `creator`) plus the relationship `graph`.
-- `insights`: dense narrative insights and relationships (`topTags`, `tagCombinations`, `narrativeInsights`, …) plus the structured signals.
-
-
-## Prompting tips
-
-The LLM doesn't know to use the MCP unless you cue it. Two patterns work:
-
-1. **Name the MCP**: "Use **kinetk** to find trending content about luxury watches in the last 7 days."
-2. **Name the kind**: "Submit an `insights` job via kinetk for `luxury watch culture 2026`."
-
-Without one of these cues, Claude/Cursor will answer from general knowledge and skip the MCP entirely — costing you nothing but giving you no real intelligence.
-
-## Transport
-
-- **Hosted MCP** speaks **HTTP / SSE**. Connect over OAuth sign-in or an `x-api-key` header — no subprocess to manage. See [Hosted MCP](./hosted-mcp.mdx).
-- **Local MCP** (`kinetk-mcp`) speaks **stdio**. Clients launch it as a subprocess and exchange JSON-RPC frames on its stdin/stdout. See [Installation](./installation.mdx).
+Full results can run to hundreds of kilobytes, and assistants pay per token. The job tools return a slim, LLM-optimized envelope by default; ask for `verbose: true` on `kinetk_get_context_job_result` when you need the full payload.

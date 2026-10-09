@@ -1,39 +1,58 @@
 ---
 title: Sync & Freshness
-description: How data lands in the Graph Service and what "fresh" means.
+description: How fresh each part of the data is, how to check it, and which time windows each call accepts.
 ---
 
-The Graph Service is read-heavy: you query it; you don't push to it. Underneath, an hourly ingestion pipeline pulls new and updated content records from upstream scanning systems into the canonical Postgres store. This page explains the data-freshness guarantees and how to monitor them.
+New content is ingested every hour. The narrative and pattern maps are rebuilt on a schedule on top of it.
 
-## Freshness signal: `GET /health`
+| Data | Refreshed | Used by |
+|---|---|---|
+| Content | Hourly | `POST /search` and every job |
+| Narrative map, `7d` | Every 6 hours | `GET /narratives/*` |
+| Narrative map, `30d` | Daily | `GET /narratives/*` |
+| Pattern map | Weekly, topped up every 48 hours | `GET /intelligence/patterns/*`, `patterns` jobs |
 
-The fastest way to check data freshness:
+Search and jobs see new posts as soon as they're ingested. Narrative and pattern reads return the latest rebuild.
+
+## Check freshness with `GET /health`
+
+```http
+GET /health
+```
+
+<Accordion title="cURL">
 
 ```bash
 curl -H "x-api-key: $API_KEY" "$API_BASE/health"
 ```
 
+</Accordion>
+
 ```json
 {
-  "ok": true,
-  "lastSyncedAt": "2026-04-28T17:32:11.000Z",
-  "syncFreshSeconds": 1432
+  "status": "ok",
+  "sync": { "lastRunAt": "2026-10-05T17:32:11.000Z", "minutesSinceLastRun": 24, "isStale": false },
+  "narratives": { "lastRunAt": "2026-10-05T12:00:03.000Z", "minutesSinceLastRun": 356, "isStale": false },
+  "content": { "lastMigratedAt": "2026-10-05T17:32:11.000Z", "minutesSinceMigration": 24, "isStale": false }
 }
 ```
 
-`lastSyncedAt` is the ISO timestamp of the last successful ingestion run. `syncFreshSeconds` is how long ago that was.
+- `sync`: the last content ingestion.
+- `narratives`: the last narrative map rebuild.
+- `content`: the newest content in the store.
 
+`isStale: true` means that part is behind schedule. `/health` returns `200` when everything is fresh and `503` when something is stale or unreachable, so you can use it as an uptime check.
 
-## Window filtering
+## Time windows
 
-Most endpoints accept a `window` parameter to restrict results by `published_at`:
+`window` filters by publish date: `24h`, `7d`, `30d`, `90d` or `all` (no filter). It never changes the price.
 
-| Value | Meaning |
-|---|---|
-| `7d` | Last 7 days |
-| `30d` | Last 30 days |
-| `all` | No time filter (live retrieval jobs only) |
+| Call | Windows | Default |
+|---|---|---|
+| `POST /search` | `7d`, `30d`, `90d`, `all` | `30d` |
+| `insights`, `records` jobs | `7d`, `30d`, `90d`, `all` | required |
+| `stats` job | `24h`, `7d`, `30d`, `90d`, `all` | `all` |
+| `GET /narratives/*` | `7d`, `30d` | `7d` |
+| `patterns` job, `GET /intelligence/patterns/*` | no window | — |
 
-Precomputed narrative endpoints only support `7d | 30d`. The `all` window exists because most ingested content has older `published_at` values and a 7-day cutoff was filtering nearly all matches — use a bounded window only when you specifically want fresh content.
-
-Live retrieval jobs (`POST /intelligence/jobs`) accept `7d`, `30d` or `all`, and the window is required — there is no default. See [Intelligence Jobs](./intelligence-jobs.mdx).
+Shorter windows return fresher, more focused results. Use `all` for long-running topics or when recent volume is thin. Posts with no publish date only appear under `all`.

@@ -1,0 +1,128 @@
+---
+title: Pattern Intelligence
+description: The visual pattern map — recurring looks and formats across the corpus, and how to move between them.
+---
+
+A **pattern** is a group of posts that look and feel alike. Patterns come from image and video similarity, not tags, so they capture what content actually shows (an aesthetic, a product shot, a format) even when creators tag it differently.
+
+The map is rebuilt weekly and topped up every 48 hours. Pattern reads take **no `window`**.
+
+<Note>
+Patterns follow **what content looks like**. [Narratives](./narrative-intelligence.mdx) follow **what people are talking about**.
+</Note>
+
+The `GET` reads below are **free**. To match a question to the map, run a [`patterns` job](#match-a-question) (10 credits per call).
+
+## Browse the map
+
+```http
+GET /intelligence/patterns?limit=25
+```
+
+<Accordion title="cURL">
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/patterns?limit=25"
+```
+
+</Accordion>
+
+Each pattern has a `patternKey` (`pat_…`), `label`, `summary`, and post, creator and engagement counts. `patternKey` stays the same across rebuilds, so you can store it.
+
+To filter, pass **both** `elementType` (`theme`, `aesthetic`, `emotion`, `product` or `visual_community`) and `elementValue`:
+
+```http
+GET /intelligence/patterns?elementType=aesthetic&elementValue=minimalist
+```
+
+<Accordion title="cURL">
+
+```bash
+curl -H "x-api-key: $API_KEY" \
+  "$API_BASE/intelligence/patterns?elementType=aesthetic&elementValue=minimalist"
+```
+
+</Accordion>
+
+## One pattern
+
+```http
+GET /intelligence/patterns/pat_…
+```
+
+<Accordion title="cURL">
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/patterns/pat_…"
+```
+
+</Accordion>
+
+Adds:
+
+- `recurrentElements[]`: the themes, aesthetics, emotions and products its posts share, with how many posts carry each (`support`).
+- `lateShare`: the share of its posts from the later part of its window. Rising means it's growing.
+- `trajectory[]`: its size at each previous rebuild.
+
+## The posts in a pattern
+
+```http
+GET /intelligence/patterns/pat_…/content?limit=25
+```
+
+<Accordion title="cURL">
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/patterns/pat_…/content?limit=25"
+```
+
+</Accordion>
+
+Returns its posts, most representative first, with `title`, `platform`, `contentUrl`, `publishedAt` and `engagement`.
+
+## Lookalikes
+
+```http
+GET /intelligence/patterns/pat_…/lookalikes?limit=10
+```
+
+<Accordion title="cURL">
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/intelligence/patterns/pat_…/lookalikes?limit=10"
+```
+
+</Accordion>
+
+Returns patterns that **look alike but are tagged differently**: two communities making the same kind of content under different names. Keyword search won't find these connections.
+
+- `centroidCosine`: how visually similar the two patterns are.
+- `tagJaccard`: how much their tags overlap. High visual similarity with low tag overlap is the interesting case.
+- `sharedElements`: what they actually have in common.
+
+## Match a question
+
+When you start from a question rather than a pattern, submit a `patterns` job:
+
+```http
+POST /intelligence/jobs
+{
+  "kind": "patterns",
+  "input": {
+    "query": "cozy home office setups",
+    "limit": 8
+  }
+}
+```
+
+<Accordion title="cURL">
+
+```bash
+curl -X POST "$API_BASE/intelligence/jobs" \
+  -H "x-api-key: $API_KEY" -H "content-type: application/json" \
+  -d '{ "kind": "patterns", "input": { "query": "cozy home office setups", "limit": 8 } }'
+```
+
+</Accordion>
+
+The result lists the best-matching patterns, each with its elements, representative posts and lookalikes, plus a written summary. See [Intelligence Jobs](./intelligence-jobs.mdx) for inputs and polling.

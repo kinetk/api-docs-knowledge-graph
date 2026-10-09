@@ -1,0 +1,78 @@
+---
+title: Choosing the Right Call
+description: Which endpoint answers which question, and the patterns that keep calls fast and cheap.
+---
+
+KINETK has three kinds of call. Picking the right one is most of what makes an integration fast and cheap.
+
+| Kind of call | Endpoints | Speed | Cost |
+|---|---|---|---|
+| **Precomputed reads** — the narrative and pattern maps, rebuilt on a schedule | `GET /narratives/*`, `GET /intelligence/patterns/*` | under 2 s | free |
+| **Fast search** — real-time retrieval and analysis (max 300 records) | `POST /search` | a few seconds | 0.01 credits per record |
+| **Async jobs** — deep retrieval and analysis over the live corpus | `POST /intelligence/jobs` (`records`, `insights`, `patterns`, `stats`) | 10 s to a few minutes | per record or flat |
+
+<Note>
+**Most calls take a time `window`: `7d`, `30d`, `90d` or `all`.** It sets how far back to look, from the last week to everything in the corpus. The window never changes the price.
+</Note>
+
+## Which call answers my question?
+
+### Ask about a topic
+
+Start with search. Each of the others goes further in one direction.
+
+<CardGroup cols={1}>
+  <Card title="Get a quick read on a topic" icon="magnifying-glass" href="/documentation/guides/search">
+    **`POST /search`** · 0.01 credits per record
+
+    See which narratives and posts are out there, in seconds. Returns ranked posts plus the narratives, patterns and creators they belong to. The best first call for almost any question.
+  </Card>
+  <Card title="Go deeper on what search found" icon="chart-line" href="/documentation/guides/intelligence-jobs">
+    **`insights` job** · 0.015 credits per record analyzed
+
+    Learn what's rising, how people feel about it and where the opportunities are. Analyzes up to 10,000 posts for narrative trajectory, sentiment, tag and theme signals, and platform opportunities.
+  </Card>
+  <Card title="See what content looks like" icon="images" href="/documentation/guides/pattern-intelligence">
+    **`patterns` job** · 10 credits per call
+
+    Find the visual themes behind a topic. Matches your question to the pattern map, which groups posts by image and video similarity rather than tags, and returns the closest patterns with a written summary.
+  </Card>
+  <Card title="Measure how big a topic is" icon="chart-simple" href="/documentation/guides/intelligence-jobs">
+    **`stats` job** · 5 credits per call
+
+    See how much of the corpus is about your query. Exact totals over everything that matches, not a sample: posts, views, likes, comments and engagement, per platform.
+  </Card>
+  <Card title="Get just the social posts" icon="list" href="/documentation/guides/intelligence-jobs">
+    **`records` job** · 0.01 credits per record
+
+    Pull the matching posts themselves, in bulk: up to 10,000 ranked posts per job. Large results come back as a download link.
+  </Card>
+</CardGroup>
+
+<Tip>
+Not sure where to start? Run `POST /search` with your question. If the answer is interesting, send the same query to an `insights` job to go deeper.
+</Tip>
+
+### Explore narratives (free)
+
+These read the precomputed maps. They're instant and cost nothing, so use them freely.
+
+| You want to… | Call |
+|---|---|
+| See what's trending right now | `GET /narratives/trending` |
+| Find existing narratives about a topic | `GET /narratives/search?q=…` |
+| Dig into one narrative: its posts, creators and platform split | `GET /narratives/{id}` |
+| Check if a narrative is growing or fading | `GET /narratives/{id}/trajectory` |
+
+Narrative ids come from search, trending and `insights`, so you can go straight from a search result to `GET /narratives/{id}` and its trajectory without searching again. These reads are free and instant, so they're a good base for dashboards you refresh often.
+
+## Keeping costs down
+
+- **Start with the free reads.** If a narrative or pattern already answers the question, you don't need a paid call.
+- **Size `limit` to what you'll read.** You pay per record, and smaller limits come back faster.
+- **Pick the narrowest `window`.** It doesn't change the price, but `7d` and `30d` return fresher, more focused results than `all`.
+- **Use a job for anything over 300 records.** Search tops out at 300; a `records` or `insights` job goes up to 10,000.
+
+## Through an AI assistant
+
+If you work in Claude, ChatGPT, Cursor or another MCP client, the [hosted MCP](../mcp/hosted-mcp.mdx) exposes the narrative reads, the pattern map and the async jobs as tools. Mention **kinetk** in your prompt so the assistant uses them. See [What You Can Ask](../mcp/what-you-can-ask.mdx) for example prompts.

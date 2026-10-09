@@ -3,63 +3,66 @@ title: Introduction
 description: Public HTTP API and MCP server for the KINETK Knowledge Graph.
 ---
 
-The **KINETK Graph Service API** is the public surface of the KINETK Knowledge Graph — a multimodal content intelligence platform that retrieves, clusters, and explains social-media narratives across TikTok, Instagram, YouTube, Reddit, Pinterest, X, and more.
+![KINETK turns scattered social posts into a connected map of narratives, creators and patterns](../assets/intro-hero.png)
+
+The **KINETK Graph Service API** is the multimodal content intelligence platform of the social web. It generates narratives and visual patterns across TikTok, Instagram, Reddit, Pinterest, X, Snapchat and more.
+
+
+### There are two ways to use it:
+
+- **HTTP API** — REST endpoints behind an API key. Best for backends, dashboards, scheduled jobs and agents you build yourself.
+- **MCP server** — a hosted [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the graph as tools in Claude, ChatGPT, Cursor, Codex and other AI assistants.
+
+*Both reach the same backend and bill the same account.*
 
 <Card title="Get Your API Key" icon="key" href="https://platform.kinetk.ai">
   Create a key in the KINETK platform to start making requests.
 </Card>
 
-This site documents two ways to use it:
-
-- **HTTP API** — REST endpoints behind an API key. Best for backends, dashboards, and scheduled jobs.
-- **MCP server** — a Model Context Protocol server (`kinetk-mcp`) that wraps the heavy async endpoints as agent-friendly tools. Best for Claude, Cursor, Gemini CLI, and other AI coding/research agents.
-
-Both share the same backend, the same auth model, and the same caching/freshness guarantees.
-
 ## What you can do
 
-| Capability | API path | Async? |
-|---|---|---|
-| Liveness + sync-freshness probe | `GET /health` | sync |
-| Precomputed trending narratives | `GET /narratives/trending` | sync |
-| Filtered narrative search | `GET /narratives/search` | sync |
-| One narrative with content + creators + breakdown | `GET /narratives/{id}` | sync |
-| Heavy retrieval: `records`, `insights` | `POST /intelligence/jobs` + `GET /intelligence/jobs/{id}` | async |
+| Capability | Endpoint | Speed | Cost |
+|---|---|---|---|
+| Ranked content + its narratives and creators, in one call | `POST /search` | a few seconds | 0.01 credits per record |
+| Trending narratives | `GET /narratives/trending` | under 2 s | free |
+| Search the narrative map | `GET /narratives/search` | under 2 s | free |
+| One narrative: posts, creators, platform split | `GET /narratives/{id}` | under 3 s | free |
+| A narrative's momentum over time | `GET /narratives/{id}/trajectory` | under 2 s | free |
+| Browse the visual pattern map | `GET /intelligence/patterns` | under 2 s | free |
+| One pattern, its posts and its lookalikes | `GET /intelligence/patterns/{patternKey}` (+ `/content`, `/lookalikes`) | under 2 s | free |
+| Deep retrieval and analysis: `records`, `insights`, `patterns`, `stats` | `POST /intelligence/jobs` + `GET /intelligence/jobs/{id}` | async | per record or per call |
+| Your credit history | `GET /usage` | under 1 s | free |
+| Service status and data freshness | `GET /health` | under 1 s | free |
 
-The async path solves the API Gateway 29-second ceiling: submit returns immediately with a `jobId`, then poll until `status: succeeded`. Identical inputs within a per-kind freshness window are served from cache. See [Intelligence Jobs](./guides/intelligence-jobs.mdx) for the full lifecycle.
+Three kinds of call sit behind that table:
 
-`records` returns ranked **content objects** — each with normalized relevance/engagement/recency signals and the score they're sorted by. See [The Content Object](./guides/content-object.mdx) for what every field means and exactly how items are ranked.
+- **Precomputed reads** of the narrative and pattern maps, rebuilt on a schedule — instant and free.
+- **Synchronous search** — one bounded live retrieval, for agents and apps that call many times per task.
+- **Async jobs** — deep retrieval and analysis over the live corpus. Submit returns a `jobId` immediately; poll until it succeeds. Identical requests are served from cache.
 
-## When to use the API vs the MCP
+Not sure which to use? See [Choosing the Right Call](./guides/choosing-an-endpoint.mdx).
 
-| Use case | Recommended path |
-|---|---|
-| You're building a backend service or dashboard | HTTP API directly |
-| You're scripting a one-shot ETL or backfill | HTTP API directly |
-| You're working in Claude / Cursor / Gemini CLI and want the AI to fetch context | MCP server |
-| You're prototyping an agent that orchestrates queries | MCP server |
+## Core concepts
 
-The MCP doesn't expose every endpoint — it surfaces a curated set of three intent-shaped tools (`create_context_job` / `get_context_job_status` / `get_context_job_result`) that map to the async `/intelligence/jobs` flow. Direct HTTP gives you everything; MCP gives you the most useful subset with token-efficient response envelopes.
+- **Content** — a post or video, with normalized relevance, engagement and recency signals and the score it is ranked by. See [The Content Object](./guides/content-object.mdx).
+- **Narratives** — clusters of content a community is talking about, tracked over time with momentum, lifecycle and sentiment. See [Narrative Intelligence](./guides/narrative-intelligence.mdx).
+- **Patterns** — groups of content that *look* alike, discovered from images and video, with the visual elements they share. See [Pattern Intelligence](./guides/pattern-intelligence.mdx).
 
 ## Base URL
-
-The production API is served at:
 
 ```
 https://api.kinetk.ai/graph
 ```
 
-Every endpoint requires your secret key in the `x-api-key` header. We recommend exporting these as env vars so the examples elsewhere in these docs work directly:
+Every endpoint requires your secret key in the `x-api-key` header. Export these so the examples in these docs work as written:
 
 ```bash
 export API_BASE="https://api.kinetk.ai/graph"
 export API_KEY="<your key>"
 ```
 
-The MCP server uses the same values via `GRAPH_SERVICE_URL` and `GRAPH_SERVICE_API_KEY` — see [MCP Installation](./mcp/installation.mdx).
-
 ## Get started
 
-1. [Authentication](./getting-started/authentication.mdx) — get an API key.
-2. [Quickstart](./getting-started/quickstart.mdx) — `curl` your first request.
-3. [MCP installation](./mcp/installation.mdx) — connect Claude/Cursor/Gemini to the server.
+1. [Quickstart](./getting-started/quickstart.mdx) — get an API key, try queries in the Playground, then make your first calls.
+2. [Pricing & Credits](./getting-started/pricing.mdx) — what each call costs.
+3. [Hosted MCP Setup](./mcp/hosted-mcp.mdx) — connect your AI assistant.

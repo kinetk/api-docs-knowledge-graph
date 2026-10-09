@@ -1,0 +1,13 @@
+# Applied on top of the generated spec, so it survives `npm run openapi:gen`.
+# Hides the MCP transport and OAuth endpoints from the API Reference: they're
+# for MCP clients, not for people calling the API directly.
+paths:
+  /mcp:
+    post:
+      x-fern-ignore: true
+  /connect:
+    post:
+      x-fern-ignore: true
+  /.well-known/oauth-protected-resource:
+    get:
+      x-fern-ignore: true

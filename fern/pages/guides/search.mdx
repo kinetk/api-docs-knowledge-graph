@@ -1,0 +1,99 @@
+---
+title: Search
+description: POST /search — one fast call that returns ranked posts plus the narratives and creators they belong to.
+---
+
+`POST /search` is the fastest way to see what's out there on a topic. In a few seconds it returns:
+
+- **`content`**: ranked posts matching your query.
+- **`narratives`**: the narratives those posts belong to.
+- **`creators`**: who made the posts.
+
+Every id in the response can be passed straight to the detail endpoints. For more than 300 posts or a full analysis, use an [intelligence job](./intelligence-jobs.mdx).
+
+**Cost:** 0.01 credits per post returned. An empty answer costs nothing. See [Pricing & Credits](../getting-started/pricing.mdx).
+
+## Request
+
+```http
+POST /search
+{
+  "query": "sneaker drops",
+  "window": "7d",
+  "limit": 20
+}
+```
+
+<Accordion title="cURL">
+
+```bash
+curl -X POST "$API_BASE/search" \
+  -H "x-api-key: $API_KEY" \
+  -H "content-type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{ "query": "sneaker drops", "window": "7d", "limit": 20 }'
+```
+
+</Accordion>
+
+| Field | Default | Notes |
+|---|---|---|
+| `query` | required | Free text. |
+| `window` | `30d` | `7d`, `30d`, `90d` or `all`. |
+| `limit` | `100` | 1–300. For more, use a `records` job. |
+Every search covers all platforms and returns all four lists. Unknown fields or out-of-range values return `400`.
+
+## Response
+
+```json
+{
+  "query": "sneaker drops",
+  "window": "7d",
+  "content": [
+    { "uuid": "…", "platform": "TIKTOK", "title": "…", "relevance": 0.83, "narrativeIds": ["4182"], "patternKeys": ["pat_…"] }
+  ],
+  "narratives": [
+    { "id": "4182", "label": "Limited sneaker drop hype", "source": "tracked", "content_count": 1240, "memberOverlap": 6 }
+  ],
+  "patterns": [],
+  "creators": [ { "creatorId": 1234, "platform": "TIKTOK", "hits": 3, "followerCount": 120000 } ],
+  "usage": { "credits": 0.2 }
+}
+```
+
+- **`content`**: ranked posts (see [The Content Object](./content-object.mdx)). Each one links to its narratives (`narrativeIds` → `GET /narratives/{id}`) and visual patterns (`patternKeys` → `GET /intelligence/patterns/{patternKey}`).
+- **`narratives`**: up to 10, only when the evidence supports them. `source` tells you which kind:
+  - `tracked`: a narrative on the precomputed map. Its `id` works with `GET /narratives/{id}`. `content_count` is its total size in the corpus; `memberOverlap` is how many of your results belong to it.
+  - `emergent`: formed on the spot from your results. Its `id` only exists in this response.
+- **`creators`**: who made the returned posts, sorted by `hits` (posts in your results), then `followerCount`. Handles are never exposed.
+- **`usage.credits`**: what the call cost.
+
+If `narratives` or `creators` find nothing in time, they come back empty and the rest of the answer is unaffected.
+
+<Note>
+The `patterns` list is temporarily switched off and returns `[]`. Posts still carry their `patternKeys`, and the [pattern endpoints](./pattern-intelligence.mdx) work as normal.
+</Note>
+
+## Retries
+
+Send an `Idempotency-Key` header with a unique value per request. Retrying with the same key and body within 15 minutes isn't charged again. Without the header, every call is billed.
+
+## Slow searches return `202`
+
+A search has about 20 seconds. If it runs over, you're not charged for the search. Instead, the question is sent to an `insights` job (100 records), charged at that job's price, and you get back a `jobId`:
+
+```json
+{ "jobId": "01931f7e-…", "status": "queued", "statusUrl": "/intelligence/jobs/01931f7e-…", "estimated_cost": 1.5, "reason": "sync_budget_exceeded" }
+```
+
+[Poll it](./intelligence-jobs.mdx#poll) like any job. A smaller `limit` or a shorter `window` makes this less likely.
+
+## Errors
+
+| Status | Cause |
+|---|---|
+| `400` | Invalid field or value, or an empty body. |
+| `402` | Not enough credits. The body says the largest `limit` you can afford. |
+| `403` | Missing or invalid API key, or a suspended account. |
+| `429` | Rate limited. Back off and retry. |
+| `5xx` | The search failed. Nothing was charged; retry. |
