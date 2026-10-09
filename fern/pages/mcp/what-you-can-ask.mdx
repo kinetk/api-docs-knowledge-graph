@@ -1,0 +1,101 @@
+---
+title: What You Can Ask
+description: Example prompts for KINETK in your AI assistant, and what each kind of question costs.
+---
+
+Once the [hosted MCP](./hosted-mcp.mdx) is connected, just ask in plain English. Your assistant picks the right KINETK tools for you.
+
+<Tip>
+**Always mention "kinetk"** in your prompt, for example *"Use kinetk to…"*. Without it, the assistant answers from its own general knowledge and skips KINETK.
+</Tip>
+
+## See what's trending
+
+> *"Use kinetk to show what's trending in fitness this week."*
+
+> *"What narratives is kinetk tracking about smartwatches?"*
+
+**Free.** Instant answers from the narratives KINETK already tracks.
+
+## Dig into a narrative
+
+> *"Drill into the top narrative. Who's driving it, and which platforms is it on?"*
+
+> *"Is that narrative growing or fading?"*
+
+**Free.** Works on any narrative the assistant found in a previous answer.
+
+## Get a full analysis
+
+> *"Use kinetk to analyze the luxury watch conversation over the last 30 days, with written takeaways."*
+
+**Paid.** Runs an analysis over up to 3,000 posts by default: about 45 credits, plus 1 credit for written takeaways. It can take a minute or two. Ask for a smaller analysis (minimum 750 posts) to spend less.
+
+## See what content looks like
+
+> *"With kinetk, find what cozy home office content looks like."*
+
+**10 credits** to match your question to the visual pattern map.
+
+> *"What other content looks like that, even if it's tagged differently?"*
+
+**Free.** Follow-up questions about patterns you've already found don't cost anything.
+
+## Pull posts to cite
+
+> *"Pull 1,000 recent posts about sustainable sneakers from kinetk so I can cite them."*
+
+**0.01 credits per post**, so 1,000 posts cost 10 credits.
+
+## Privacy
+
+Creator handles, display names and platform account ids are never returned. A creator only appears as a numeric id and a follower count.
+
+See [Pricing & Credits](../getting-started/pricing.mdx) for how billing works. The MCP bills the same account at the same prices as the API.
+
+## Tool reference (for developers)
+
+<Accordion title="All hosted MCP tools">
+
+You don't need these to use KINETK. They're useful if you're debugging an integration or checking which API call a tool makes.
+
+**Context jobs: live analysis (paid)**
+
+| Tool | Does | API call |
+|---|---|---|
+| `kinetk_get_context` | Submits a job and waits up to about 24 seconds for the result. If it's still running, returns `{ status: "pending", jobId }`. | `POST` + `GET /intelligence/jobs` |
+| `kinetk_create_context_job` | Submits a job and returns a `jobId` without waiting. | `POST /intelligence/jobs` |
+| `kinetk_get_context_job_status` | Checks a job's status. | `GET /intelligence/jobs/{id}` |
+| `kinetk_get_context_job_result` | Gets a finished job's result: a short, token-efficient version by default, or the full payload with `verbose: true`. | `GET /intelligence/jobs/{id}` |
+
+The job tools take `kind: "records"` or `kind: "insights"`, with the same inputs as [Intelligence Jobs](../guides/intelligence-jobs.mdx). Through the MCP, `limit` must be 750–10,000, and `window` defaults to `all`.
+
+**Narratives (free)**
+
+| Tool | API call |
+|---|---|
+| `kinetk_trending_narratives` | `GET /narratives/trending` |
+| `kinetk_search_narratives` | `GET /narratives/search` |
+| `kinetk_get_narrative` | `GET /narratives/{id}` |
+| `kinetk_get_narrative_trajectory` | `GET /narratives/{id}/trajectory` |
+
+**Patterns**
+
+| Tool | API call | Cost |
+|---|---|---|
+| `kinetk_search_patterns` | `patterns` job | 10 credits |
+| `kinetk_list_patterns` | `GET /intelligence/patterns` | free |
+| `kinetk_get_pattern` | `GET /intelligence/patterns/{patternKey}` | free |
+| `kinetk_get_pattern_content` | `GET /intelligence/patterns/{patternKey}/content` | free |
+| `kinetk_get_pattern_neighbors` | `GET /intelligence/patterns/{patternKey}/lookalikes` | free |
+
+**ChatGPT deep research**
+
+| Tool | Does |
+|---|---|
+| `search` | Finds matching content and returns `{ id, title, url }`. Runs a 100-post `records` job, up to 1 credit per call. |
+| `fetch` | Returns one result's full text and metadata by `id`. |
+
+ChatGPT's deep research mode requires these exact names, so they're the only tools without the `kinetk_` prefix. Other assistants can ignore them.
+
+</Accordion>

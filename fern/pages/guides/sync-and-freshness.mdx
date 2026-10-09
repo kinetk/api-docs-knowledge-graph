@@ -1,65 +1,58 @@
 ---
 title: Sync & Freshness
-description: How data lands in the Graph Service, how fresh each part is, and how windows filter it.
+description: How fresh each part of the data is, how to check it, and which time windows each call accepts.
 ---
 
-The Graph Service is read-only for you: you query it; you don't push to it. Underneath, an hourly ingestion pipeline pulls new and updated content from KINETK's scanning systems into the canonical store, and scheduled jobs rebuild the narrative and pattern maps on top of it.
+New content is ingested every hour. The narrative and pattern maps are rebuilt on a schedule on top of it.
 
-## How fresh is each part?
-
-| Data | Refreshed | Read by |
+| Data | Refreshed | Used by |
 |---|---|---|
-| Content | Hourly ingestion | `POST /search`, every job kind |
-| Narrative map, `7d` | Every 6 hours | `GET /narratives/*`, `POST /search` |
-| Narrative map, `30d` | Daily | `GET /narratives/*`, `POST /search`, `insights` corpus evidence |
-| Pattern map | Weekly rebuild, topped up every 48 hours | `GET /intelligence/patterns/*`, `patterns` jobs |
+| Content | Hourly | `POST /search` and every job |
+| Narrative map, `7d` | Every 6 hours | `GET /narratives/*` |
+| Narrative map, `30d` | Daily | `GET /narratives/*` |
+| Pattern map | Weekly, topped up every 48 hours | `GET /intelligence/patterns/*`, `patterns` jobs |
 
-`POST /search` and the async jobs retrieve over live content, so they see new posts as soon as they are ingested. The narrative and pattern reads return the latest rebuild.
+Search and jobs see new posts as soon as they're ingested. Narrative and pattern reads return the latest rebuild.
 
-## Checking freshness: `GET /health`
+## Check freshness with `GET /health`
+
+```http
+GET /health
+```
+
+<Accordion title="cURL">
 
 ```bash
 curl -H "x-api-key: $API_KEY" "$API_BASE/health"
 ```
 
+</Accordion>
+
 ```json
 {
   "status": "ok",
-  "db": "connected",
-  "dbWriter": "connected",
   "sync": { "lastRunAt": "2026-10-05T17:32:11.000Z", "minutesSinceLastRun": 24, "isStale": false },
   "narratives": { "lastRunAt": "2026-10-05T12:00:03.000Z", "minutesSinceLastRun": 356, "isStale": false },
-  "content": { "lastMigratedAt": "2026-10-05T17:32:11.000Z", "minutesSinceMigration": 24, "isStale": false },
-  "timestamp": "2026-10-05T17:56:40.000Z"
+  "content": { "lastMigratedAt": "2026-10-05T17:32:11.000Z", "minutesSinceMigration": 24, "isStale": false }
 }
 ```
 
-- `sync` — the last content ingestion run.
-- `narratives` — the last narrative map rebuild.
-- `content` — the newest content in the store.
-- `isStale: true` on any of them means that part is behind schedule.
+- `sync`: the last content ingestion.
+- `narratives`: the last narrative map rebuild.
+- `content`: the newest content in the store.
 
-`/health` returns `200` when everything is reachable and fresh, and `503` with the same body when something is unreachable or stale — so it works directly as an uptime probe.
+`isStale: true` means that part is behind schedule. `/health` returns `200` when everything is fresh and `503` when something is stale or unreachable, so you can use it as an uptime check.
 
-## Windows
+## Time windows
 
-`window` restricts results by publish date:
+`window` filters by publish date: `24h`, `7d`, `30d`, `90d` or `all` (no filter). It never changes the price.
 
-| Value | Meaning |
-|---|---|
-| `24h` | Last 24 hours |
-| `7d` | Last 7 days |
-| `30d` | Last 30 days |
-| `all` | No time filter |
-
-Which windows each endpoint accepts:
-
-| Endpoint | Windows | Default |
+| Call | Windows | Default |
 |---|---|---|
+| `POST /search` | `7d`, `30d`, `90d`, `all` | `30d` |
+| `insights`, `records` jobs | `7d`, `30d`, `90d`, `all` | required |
+| `stats` job | `24h`, `7d`, `30d`, `90d`, `all` | `all` |
 | `GET /narratives/*` | `7d`, `30d` | `7d` |
-| `POST /search` | `7d`, `30d`, `all` | `30d` |
-| `records`, `insights` jobs | `7d`, `30d`, `all` | required — no default |
-| `stats` job | `24h`, `7d`, `30d`, `all` | `all` |
-| `patterns` job, `GET /intelligence/patterns/*` | no window — the map covers the corpus's recent history | — |
+| `patterns` job, `GET /intelligence/patterns/*` | no window | — |
 
-**`window` never changes the price** — it chooses what to retrieve over, not what it costs. A bounded window returns fresher, more focused evidence; `all` is the right choice when the topic is long-running or the recent volume is thin. Bounded windows leave out content with no publish date.
+Shorter windows return fresher, more focused results. Use `all` for long-running topics or when recent volume is thin. Posts with no publish date only appear under `all`.

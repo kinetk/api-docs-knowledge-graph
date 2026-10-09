@@ -3,31 +3,34 @@ title: Introduction
 description: Public HTTP API and MCP server for the KINETK Knowledge Graph.
 ---
 
-The **KINETK Graph Service API** is the public surface of the KINETK Knowledge Graph — a multimodal content intelligence platform that retrieves, clusters and explains social-media content, narratives and visual patterns across TikTok, Instagram, Reddit, Pinterest, X, Snapchat and more.
+![KINETK turns scattered social posts into a connected map of narratives, creators and patterns](../assets/intro-hero.png)
+
+The **KINETK Graph Service API** is the multimodal content intelligence platform of the social web. It generates narratives and visual patterns across TikTok, Instagram, Reddit, Pinterest, X, Snapchat and more.
+
+
+### There are two ways to use it:
+
+- **HTTP API** — REST endpoints behind an API key. Best for backends, dashboards, scheduled jobs and agents you build yourself.
+- **MCP server** — a hosted [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the graph as tools in Claude, ChatGPT, Cursor, Codex and other AI assistants.
+
+*Both reach the same backend and bill the same account.*
 
 <Card title="Get Your API Key" icon="key" href="https://platform.kinetk.ai">
   Create a key in the KINETK platform to start making requests.
 </Card>
 
-There are two ways to use it:
-
-- **HTTP API** — REST endpoints behind an API key. Best for backends, dashboards, scheduled jobs and agents you build yourself.
-- **MCP server** — a hosted [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the graph as tools in Claude, ChatGPT, Cursor, Codex and other AI assistants.
-
-Both reach the same backend and bill the same account.
-
 ## What you can do
 
 | Capability | Endpoint | Speed | Cost |
 |---|---|---|---|
-| Ranked content + its narratives and creators, in one call | `POST /search` | a few seconds | $0.010 / row |
+| Ranked content + its narratives and creators, in one call | `POST /search` | a few seconds | 0.01 credits per record |
 | Trending narratives | `GET /narratives/trending` | under 2 s | free |
 | Search the narrative map | `GET /narratives/search` | under 2 s | free |
 | One narrative: posts, creators, platform split | `GET /narratives/{id}` | under 3 s | free |
 | A narrative's momentum over time | `GET /narratives/{id}/trajectory` | under 2 s | free |
 | Browse the visual pattern map | `GET /intelligence/patterns` | under 2 s | free |
 | One pattern, its posts and its lookalikes | `GET /intelligence/patterns/{patternKey}` (+ `/content`, `/lookalikes`) | under 2 s | free |
-| Deep retrieval and analysis: `records`, `insights`, `patterns`, `stats` | `POST /intelligence/jobs` + `GET /intelligence/jobs/{id}` | async | per record or flat |
+| Deep retrieval and analysis: `records`, `insights`, `patterns`, `stats` | `POST /intelligence/jobs` + `GET /intelligence/jobs/{id}` | async | per record or per call |
 | Your credit history | `GET /usage` | under 1 s | free |
 | Service status and data freshness | `GET /health` | under 1 s | free |
 
@@ -60,7 +63,6 @@ export API_KEY="<your key>"
 
 ## Get started
 
-1. [Authentication](./getting-started/authentication.mdx) — get an API key.
-2. [Quickstart](./getting-started/quickstart.mdx) — your first search, narrative and job.
-3. [Pricing & Credits](./getting-started/pricing.mdx) — what each call costs.
-4. [Hosted MCP](./mcp/hosted-mcp.mdx) — connect your AI assistant.
+1. [Quickstart](./getting-started/quickstart.mdx) — get an API key, try queries in the Playground, then make your first calls.
+2. [Pricing & Credits](./getting-started/pricing.mdx) — what each call costs.
+3. [Hosted MCP Setup](./mcp/hosted-mcp.mdx) — connect your AI assistant.

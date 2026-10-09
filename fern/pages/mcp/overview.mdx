@@ -7,26 +7,19 @@ The **`kinetk` MCP server** is a [Model Context Protocol](https://modelcontextpr
 
 ## Two ways to run it
 
-| | **Hosted MCP** (recommended) | **Local MCP** (stdio) |
+| | **Hosted MCP** (recommended) | **Local MCP** (advanced, self-run) |
 |---|---|---|
 | What it is | A managed endpoint KINETK runs for you | The `kinetk-mcp` package you run as a subprocess |
 | Setup | Nothing to install — sign in, or pass an `x-api-key` header | Clone, build, and point your client at it |
 | Tools | The full set: context jobs, narratives, patterns, search/fetch | The three original context-job tools only |
 | Best for | Claude Desktop, ChatGPT, Claude Code, Codex, Cursor, Gemini, Grok | Pinning a specific build, or custom forks |
-| Guide | [Hosted MCP](./hosted-mcp.mdx) | [Installation](./installation.mdx) |
+| Guide | [Hosted MCP Setup](./hosted-mcp.mdx) | [Local MCP (Advanced)](./local-mcp.mdx) |
 
 Most users want the **[Hosted MCP](./hosted-mcp.mdx)**: it is always current and has every tool. Both bill the same account at the same prices as the [HTTP API](../getting-started/pricing.mdx).
 
-## What the hosted MCP exposes
+## What you can do with it
 
-| Group | Tools | For |
-|---|---|---|
-| **Context jobs** | `kinetk_get_context`, `kinetk_create_context_job`, `kinetk_get_context_job_status`, `kinetk_get_context_job_result` | Live retrieval and analysis: `records` and `insights` jobs. |
-| **Narratives** | `kinetk_trending_narratives`, `kinetk_search_narratives`, `kinetk_get_narrative`, `kinetk_get_narrative_trajectory` | Free, instant reads of the precomputed narrative map. |
-| **Patterns** | `kinetk_search_patterns`, `kinetk_list_patterns`, `kinetk_get_pattern`, `kinetk_get_pattern_content`, `kinetk_get_pattern_neighbors` | The visual pattern map, and the lookalike connections between patterns. |
-| **Search / fetch** | `search`, `fetch` | ChatGPT deep research. |
-
-See [Tools](./tools.mdx) for what each one takes and returns.
+Ask your assistant what's trending, dig into a narrative, run a full analysis, explore what content looks like, or pull posts to cite. See [What You Can Ask](./what-you-can-ask.mdx) for example prompts and what each costs.
 
 ## When to use the MCP vs the API
 
@@ -36,15 +29,6 @@ See [Tools](./tools.mdx) for what each one takes and returns.
 | You're exploring a topic conversationally — trending, drill-down, related patterns | **MCP** |
 | You're building a backend, scheduled job or dashboard | **API** |
 | You need `POST /search`, `stats` jobs, `GET /usage` or `GET /health` | **API** — these aren't exposed as tools |
-
-## Prompting tips
-
-The assistant won't use KINETK unless you cue it:
-
-1. **Name it** — *"Use **kinetk** to find what's trending in luxury watches this week."*
-2. **Say what you want back** — the posts themselves (`records`), the analysis (`insights`), what content looks like (patterns), or what's trending (narratives).
-
-Without a cue, the assistant answers from its own general knowledge and skips the graph.
 
 ## Why slim results?
 

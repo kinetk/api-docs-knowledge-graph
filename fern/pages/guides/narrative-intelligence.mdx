@@ -1,32 +1,31 @@
 ---
 title: Narrative Intelligence
-description: What a narrative is, how to read the precomputed narrative map, and when to run an insights job instead.
+description: What a narrative is, and how to read trending, search, detail and trajectory from the narrative map.
 ---
 
-A **narrative** is a cluster of social content unified by a shared idea — a topic, framing or moment — that a community is talking about. Narratives are built from multimodal content embeddings combined with tag and creator co-occurrence, then named and summarized by an LLM.
+A **narrative** is a group of posts built around a shared idea, such as a topic, framing or moment that a community is talking about. KINETK tracks each narrative over time, so you can see it grow, spread across platforms and change in tone.
 
-KINETK keeps a **persistent narrative map**: the same narrative is tracked from one rebuild to the next, so you can see how it grows, moves across platforms and changes sentiment over time.
+All narrative reads are **free** and return in under 3 seconds. They take `window=7d` (rebuilt every 6 hours, the default) or `window=30d` (rebuilt daily). For an all-time or custom analysis, run an [`insights` job](./intelligence-jobs.mdx).
 
-There are two ways to get narratives:
-
-| | Endpoints | Speed | Cost | Use when |
-|---|---|---|---|---|
-| **Precomputed reads** | `GET /narratives/trending`, `/narratives/search`, `/narratives/{id}`, `/narratives/{id}/trajectory` | under 3 s | free | Dashboards, browsing, drilling into a narrative you already have an id for. |
-| **Live discovery** | `insights` job via `POST /intelligence/jobs` | async | $0.015 per record | A fresh, query-specific analysis with signals, sentiment and platform opportunities. |
-
-`POST /search` sits between the two: it returns the precomputed narratives its live results belong to, in one synchronous call. See [Search](./search.mdx).
-
-## Windows
-
-The precomputed map is built per window: **`7d`** (rebuilt every 6 hours) and **`30d`** (daily). Every narrative read takes `window` — `7d` or `30d` — and defaults to `7d`. There is no precomputed `all` map — for an all-time view, run an `insights` job with `window: "all"`.
+<Note>
+Narratives follow **what people are talking about**. [Patterns](./pattern-intelligence.mdx) follow **what content looks like**.
+</Note>
 
 ## Trending
+
+```http
+GET /narratives/trending?window=7d&limit=12
+```
+
+<Accordion title="cURL">
 
 ```bash
 curl -H "x-api-key: $API_KEY" "$API_BASE/narratives/trending?window=7d&limit=12"
 ```
 
-The top narratives for the window, `limit` 1–100 (default 20):
+</Accordion>
+
+Returns the top narratives for the window (`limit` 1–100, default 20):
 
 ```json
 {
@@ -34,7 +33,6 @@ The top narratives for the window, `limit` 1–100 (default 20):
   "narratives": [
     {
       "id": "4182",
-      "window_key": "7d",
       "label": "Smartwatch fitness accountability",
       "summary": "Creators pairing smartwatch reviews with community accountability challenges…",
       "momentum_score": 0.74,
@@ -45,76 +43,71 @@ The top narratives for the window, `limit` 1–100 (default 20):
       "total_engagement": "18240501",
       "top_tags": ["smartwatch", "fitness", "accountability"],
       "lifecycle": "growing",
-      "sentiment_label": "positive",
-      "computed_at": "2026-10-05T12:00:00.000Z"
+      "sentiment_label": "positive"
     }
   ]
 }
 ```
 
-Key fields:
+- `momentum_score`: how fast it's moving. `emerging_score`: how new it is.
+- `lifecycle`: `emerging`, `growing`, `peaking` or `declining`. `null` for narratives too new to have history.
+- `sentiment_label`: the overall tone of its posts.
+- `total_engagement` is a string, because it can exceed JavaScript's safe integer range.
 
-- `momentum_score` / `emerging_score` — how fast the narrative is moving, and how new it is.
-- `velocity`, `acceleration`, `diffusion`, `lifecycle` (`emerging`, `growing`, `peaking`, `declining`) — its trajectory across rebuilds; `null` on narratives too new to have history.
-- `sentiment_label`, `sentiment_score`, `sentiment_breakdown` — the tone of its content.
-- `total_engagement` is returned as a string: it can exceed JavaScript's safe integer range.
-
-**Names can change.** A narrative is first named from its top tags and then renamed by an LLM pass, and a later rebuild may rename it again as its tags shift. Key on `id` or `narrative_key`, never on `label`.
+<Warning>
+Narrative names can change between rebuilds. Store the `id`, never the `label`.
+</Warning>
 
 ## Search
 
-```bash
-curl -H "x-api-key: $API_KEY" "$API_BASE/narratives/search?q=smart+watch&window=7d&limit=12"
+```http
+GET /narratives/search?q=smart+watch&window=7d
 ```
 
-Finds narratives whose name or tags contain **every word** of `q` (whole words, stop words ignored, English stemming). When none match, it falls back to narratives whose content mentions the query, then to trending. Same row shape and `limit` as trending, wrapped as `{ query, window, narratives }`.
+<Accordion title="cURL">
+
+```bash
+curl -H "x-api-key: $API_KEY" "$API_BASE/narratives/search?q=smart+watch&window=7d"
+```
+
+</Accordion>
+
+Finds narratives whose name or tags contain every word of `q`. If none match, it falls back to narratives whose posts mention the query, then to trending. Returns the same rows as trending.
 
 ## One narrative
+
+```http
+GET /narratives/4182
+```
+
+<Accordion title="cURL">
 
 ```bash
 curl -H "x-api-key: $API_KEY" "$API_BASE/narratives/4182"
 ```
 
-The full evidence for one narrative:
+</Accordion>
 
-- `narrative` — the same header as in trending.
-- `content[]` — its member posts with engagement counts.
-- `creators[]` — its top creators and how much they posted.
-- `platformBreakdown[]` — content and engagement per platform.
-- `duplicateGroups[]` — reposts of the same asset, grouped. Currently empty: duplicate detection is not yet switched on.
+Returns the narrative plus its evidence:
 
-Narrative ids come from trending, search, the `narrativeIds` on `POST /search` content rows, and an `insights` result's `persistentLink`.
+- `content[]`: its posts, with engagement counts.
+- `creators[]`: its top creators.
+- `platformBreakdown[]`: posts and engagement per platform.
+
+You get narrative ids from trending, search, the `narrativeIds` on `POST /search` results, and the `persistentLink` on `insights` results.
 
 ## Trajectory
+
+```http
+GET /narratives/4182/trajectory
+```
+
+<Accordion title="cURL">
 
 ```bash
 curl -H "x-api-key: $API_KEY" "$API_BASE/narratives/4182/trajectory"
 ```
 
-Returns `{ id, narrativeKey, window, trajectory[] }`: the narrative's metrics at each rebuild, newest first (`limit` 1–200, default 60) — `momentum_score`, `emerging_score`, `content_count`, `creator_count`, `total_engagement`, `top_tags`, sentiment and `velocity` / `acceleration` / `diffusion` / `lifecycle`. Use it to tell whether a narrative is accelerating or fading.
+</Accordion>
 
-## Live discovery with `insights`
-
-When the precomputed map doesn't answer your question — a niche topic, a custom platform mix, an all-time view — run an `insights` job. It retrieves live content for your query, clusters it into narratives, and links each one back to the persistent map.
-
-```bash
-curl -X POST "$API_BASE/intelligence/jobs" \
-  -H "x-api-key: $API_KEY" -H "content-type: application/json" \
-  -d '{
-    "kind": "insights",
-    "input": { "query": "luxury watch culture", "window": "30d", "includeSignals": true }
-  }'
-```
-
-Each narrative in the result carries:
-
-- `label`, `summary`, `topTags`, `topThemes`, `representativeContent[]` (top 8 posts).
-- `sampleSize` — how many of the analyzed posts formed it.
-- `corpusEvidence` — its scale in the whole corpus, not just this sample: `status` (`linked` — already on the map; `tracking_started` — added to the map by this query; `net_new`), corpus content and creator counts, platform split, `lifecycle`, `velocity`, `trackedSince` and a `confidence` tier.
-- `persistentLink` — the matching precomputed narrative, with its `narrativeId` for `GET /narratives/{id}`.
-
-The result also includes per-tag and per-theme signals, narrative sentiment and saturation, top creators, platform opportunities and attribute lifts. With `includeSignals: true` you also get LLM-written takeaways (`insights`, `tagInsights`, `narrativeInsights`). See [Intelligence Jobs](./intelligence-jobs.mdx) for every input.
-
-## Narratives vs patterns
-
-Narratives follow **community conversation** — shared topics and tags, and how fast they move. [Patterns](./pattern-intelligence.mdx) follow **what content looks like**. A narrative tells you people are talking about home office setups and that it's growing; a pattern tells you which visual formats that content uses.
+Returns the narrative's metrics at each rebuild, newest first (`limit` 1–200, default 60): momentum, size, engagement, sentiment and `lifecycle`. Use it to tell whether a narrative is accelerating or fading.

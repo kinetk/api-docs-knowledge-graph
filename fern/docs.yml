@@ -4,20 +4,32 @@ instances:
 
 title: KINETK Graph Service API
 
-# First version listed is the default (unversioned URLs); others get /v1.0.0/... paths.
+# First version listed is the default (unversioned URLs); others get /<version>/... paths.
 versions:
   - display-name: v1.0.1
     path: ./versions/v1.0.1.yml
-  - display-name: v1.0.0
-    path: ./versions/v1.0.0.yml
 
 colors:
+  # Palette from the kinetk.ai website (kinetk-main-website/app/globals.css).
+  # Light mode matches the site; dark mode uses the site's warm code-block palette.
   accent-primary:
-    light: "#1A8A9C"  # darker teal — meets WCAG contrast on white
-    dark: "#26AEC0"   # primary brand teal — works on black
+    light: "#6B4FC0"  # brand purple (5.56:1 on paper)
+    dark: "#B9A6F0"   # code-purple, readable on the dark ground
   background:
-    light: "#FFFFFF"
-    dark: "#000000"
+    light: "#FAF6EF"  # paper. The site never uses pure white
+    dark: "#16130E"   # code-bg, warm near-black
+  card-background:
+    light: "#FFFDF8"  # paper-raised
+    dark: "#1F1B15"
+  sidebar-background:
+    light: "#FAF6EF"
+    dark: "#16130E"
+  header-background:
+    light: "#FAF6EF"
+    dark: "#16130E"
+  border:
+    light: "#D9D6D0"  # border-hairline
+    dark: "#2E2921"
 
 # Custom fonts (Inter for body, Bebas Neue for headings — matches kinetk.ai).
 # Re-enable once WOFF2 files are added under ./assets/fonts/.

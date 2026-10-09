@@ -27,7 +27,7 @@ info:
 
     costs $0.010 per content row returned — the same as a `records` record —
 
-    when its `content` arm runs and is free otherwise, charged only on a `200`. Async intelligence jobs:
+    charged only on a `200`. Async intelligence jobs:
 
     `records` costs $0.010 per record and `insights` $0.015 per record, both
 
@@ -591,82 +591,15 @@ paths:
   /search:
     post:
       operationId: search
-      summary: Synchronous search — content, narratives, patterns and creators in one
-        call
-      description: >
-        One bounded call an agent can make many times per task. Returns typed,
-
-        LLM-ready objects straight from the corpus and the precomputed maps:
-
-
-        - `content` — up to `limit` ranked rows from one capped multimodal
-          retrieval (default 100, max 300), each carrying the `narrativeIds` and
-          `patternKeys` it belongs to so you can walk into
-          `GET /narratives/{id}` and `GET /intelligence/patterns/{patternKey}`.
-        - `narratives` — up to 10 precomputed narratives that match the query
-          (never padded with trending narratives when nothing matches).
-        - `patterns` — up to 5 map-first pattern matches, without the prose.
-          Currently switched off on `/search` (always `[]`) until loading the
-          pattern map moves off the request path; content rows still carry
-          `patternKeys`, and `GET /intelligence/patterns/*` is unaffected.
-        - `creators` — an aggregate of who authored the returned content rows
-          (numeric id, platform, hits, reach; never a handle).
-
-        Deep analysis (statistics, discovery, LLM-written insight) is what
-
-        `POST /intelligence/jobs` is for. `window` is `7d`, `30d` or `all` (default
-
-        `30d`). `all` retrieves with no time bound; no narrative map is built for
-
-        it, so its precomputed narratives come from the 30d map, while narratives
-
-        formed from its own content carry `window_key: all`. A `limit` above 300
-
-        belongs to a `records` job and is rejected with `400`, as is an empty
-
-        `types` list and `creators` without `content` (creators are derived from
-
-        the content rows).
-
-
-        Pricing: $0.010 per content row returned (the `records` rate) when the
-
-        `content` arm runs. The hold is `limit` × $0.010; the settle on a `200`
-
-        charges the rows actually returned and releases the rest, so an empty
-
-        answer costs nothing. `types` without `content` (e.g. `["narratives"]`) runs no
-
-        retrieval and costs nothing. A client `Idempotency-Key` header collapses
-
-        retries of the same logical request (same account, same canonical body)
-
-        onto one charge; without it every call is charged.
-
-
-        Degradation: the free `narratives` and `patterns` arms are best-effort.
-
-        Whether an arm failed, ran out of budget or simply matched nothing, it
-
-        returns `[]`, and the response does not distinguish those cases — a search
-
-        is answered by its `content`. A failed `content` arm is different: it fails
-
-        the whole request with no charge, or becomes the `202`.
-
-
-        Response shapes:
-
-        - `200` — the search result; `usage.credits` and the credit headers
-          report what this call charged.
-        - `202` — the content retrieval exceeded the synchronous budget. The
-          search hold was refunded and the same question was handed to an async
-          `insights` job (100 records, no signals, at that kind's own price and
-          hold); poll `statusUrl`. `status` is the job's real state, which can already be
-          `succeeded` when the submit collapsed onto a cached result.
-        - `402` — insufficient credits for the `limit` × $0.010 hold (or, on the `202` path,
-          for the insights job); the body recommends how to fit your budget.
-        - `429` — rate limited by the API Gateway usage plan; honour `Retry-After`.
+      summary: Search content, narratives, patterns and creators
+      description: Synchronous search over the live corpus. Returns up to `limit`
+        ranked content rows (default 100, max 300) plus the narratives, patterns
+        and creators they belong to, with ids for `GET /narratives/{id}` and
+        `GET /intelligence/patterns/{patternKey}` (`patterns` is currently
+        always empty while it is switched off). Costs $0.010 per content row
+        returned. A search that runs past its time budget returns `202` with an
+        `insights` job to poll. For larger pulls or deep analysis, use `POST
+        /intelligence/jobs`.
       security:
         - ApiKeyAuth: []
       requestBody:
@@ -688,10 +621,8 @@ paths:
             X-Kinetk-Credits-Remaining:
               $ref: "#/components/headers/CreditsRemaining"
         "202":
-          description: "Accepted for async completion: the content arm exceeded the
-            synchronous budget, the search hold was refunded, and an `insights`
-            job was submitted. Poll `statusUrl`. The credit headers report the
-            job's hold, not the search fee."
+          description: "The search ran past its time budget: its charge was refunded and
+            an `insights` job was submitted instead. Poll `statusUrl`."
           headers:
             X-Kinetk-Credits-Used:
               $ref: "#/components/headers/CreditsUsed"
@@ -702,10 +633,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ISearchAcceptedResponse"
         "400":
-          description: "Rejected input: `window` other than `7d`/`30d`/`all`, `limit`
-            above 300 or not a positive integer, an empty `types` list,
-            `creators` without `content`, an unsupported platform or type, or an
-            undeclared field."
+          description: "Rejected input: `window` other than `7d`/`30d`/`90d`/`all`,
+            `limit` above 300 or not a positive integer, or an undeclared
+            field."
           content:
             application/json:
               schema:
@@ -2589,11 +2519,11 @@ components:
             Records to analyze/return. Required for `records`; optional for
             `insights`
 
-            (omitted → per-window server default: 7d 1500 / 30d 3000 / all 3000; an
+            (omitted → per-window server default: 7d 1500 / 30d 3000 / 90d 3000 / all 3000; an
 
             explicit value is a cost cap or depth override). includeSignals requires
 
-            at least the window's floor (7d 375 / 30d 750 / all 1500). Settlement
+            at least the window's floor (7d 375 / 30d 750 / 90d 750 / all 1500). Settlement
 
             bills the records actually ANALYZED.
           type: number
@@ -2788,48 +2718,16 @@ components:
           description: Max content rows to return (default 100, max 300). Larger pulls
             belong to a `records` job.
           type: number
-        platforms:
-          description: Platforms to filter content by. Case-insensitive; omit for all
-            platforms.
-          items:
-            enum:
-              - instagram
-              - pinterest
-              - reddit
-              - snapchat
-              - tiktok
-              - x
-            type: string
-          type: array
         query:
-          description: >-
-            Free-text query. Embedded for the content retrieval and matched
-            against
-
-            the narrative and pattern maps.
+          description: Free-text query.
           minLength: 1
           type: string
-        types:
-          description: >-
-            Result arms to return. Defaults to all four. A request without
-            `content`
-
-            runs no retrieval and costs nothing; `creators` are aggregated from the
-
-            content rows, so asking for them without `content` is rejected with 400.
-          items:
-            enum:
-              - content
-              - creators
-              - narratives
-              - patterns
-            type: string
-          type: array
         window:
-          description: Freshness window for content and narratives. Defaults to `30d`.
+          description: "`7d`, `30d`, `90d` or `all`. Defaults to `30d`."
           enum:
             - 30d
             - 7d
+            - 90d
             - all
           type: string
       required:
@@ -3039,11 +2937,12 @@ components:
         window_end:
           type: string
         window_key:
-          description: The precomputed window a tracked narrative belongs to, or `all` for
-            one formed from an unbounded search.
+          description: The precomputed window a tracked narrative belongs to, or the
+            search window an emergent one was formed from.
           enum:
             - 30d
             - 7d
+            - 90d
             - all
           type: string
         window_start:
@@ -3180,8 +3079,7 @@ components:
         query:
           type: string
         request_id:
-          description: API Gateway request id; echoed so a caller can correlate logs and
-            ledger rows.
+          description: Request id; quote it when contacting support about a call.
           type: string
         response_time_ms:
           type: number
@@ -3189,8 +3087,7 @@ components:
           additionalProperties: false
           properties:
             credits:
-              description: Decimal credits charged for this call (0 without the `content`
-                arm).
+              description: "Credits charged for this call: $0.010 per content row returned."
               type: number
           required:
             - credits
@@ -3497,8 +3394,10 @@ components:
             - 24h
             - 30d
             - 7d
+            - 90d
             - all
           type: string
+          description: The window the counts cover.
       required:
         - platforms
         - provenance
@@ -3549,6 +3448,7 @@ components:
             - 24h
             - 30d
             - 7d
+            - 90d
             - all
           type: string
       required:
@@ -3810,6 +3710,7 @@ components:
       enum:
         - 30d
         - 7d
+        - 90d
         - all
       type: string
     PatternDetail:
@@ -4005,6 +3906,7 @@ components:
       enum:
         - 30d
         - 7d
+        - 90d
         - all
       type: string
     PublicQueryNarrative:
@@ -4494,6 +4396,7 @@ components:
       enum:
         - 30d
         - 7d
+        - 90d
         - all
       type: string
   headers:

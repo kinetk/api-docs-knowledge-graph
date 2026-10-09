@@ -1,11 +1,13 @@
 ---
-title: MCP Installation
-description: Install the kinetk MCP server in Claude Code, Claude Desktop, Cursor, Windsurf, Gemini CLI, and ChatGPT.
+title: Local MCP (Advanced)
+description: Run the kinetk MCP server yourself as a local stdio process. Only needed to pin or fork a build.
 ---
 
-<Callout intent="info">
-  This page installs the **local** package, which exposes the three original context-job tools (`create_context_job`, `get_context_job_status`, `get_context_job_result`). The narrative and pattern tools are only on the [Hosted MCP](./hosted-mcp.mdx), which needs no install — use it unless you need to pin or fork a build.
-</Callout>
+<Warning>
+**Just want to use KINETK in your AI assistant? You don't need this page.** Follow [Hosted MCP Setup](./hosted-mcp.mdx) instead: nothing to install, and it has every tool.
+
+This page is for running the MCP server **on your own machine**. The local server only has the three context-job tools (`create_context_job`, `get_context_job_status`, `get_context_job_result`), not the narrative and pattern tools.
+</Warning>
 
 The local `kinetk` MCP runs over **stdio** — clients launch it as a subprocess and speak JSON-RPC on its stdin/stdout. You'll point each client at the built `dist/index.js` and pass two env vars: the API base URL and your API key.
 

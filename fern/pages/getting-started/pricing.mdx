@@ -3,20 +3,22 @@ title: Pricing & Credits
 description: What every call costs, how holds and settlement work, and how to keep spend predictable.
 ---
 
-KINETK is metered in **credits**. **1 credit = $1.00.** Buy credits from the [KINETK platform](https://platform.kinetk.ai); every billed call draws them down from your account's balance.
+KINETK is metered in **credits**. Buy credits from the [KINETK platform](https://platform.kinetk.ai); every billed call draws them down from your account's balance.
+
+**Base unit:** 1 credit = $1.00 USD.
 
 ## Price list
 
 | What you call | Price | Charged on |
 |---|---|---|
-| `POST /search` with `content` | **$0.010 per content row** | rows actually returned |
-| `POST /search` without `content` | **free** | — |
-| `records` job | **$0.010 per record** | records actually returned |
-| `insights` job | **$0.015 per record** | records actually analyzed |
-| `insights` with `includeSignals: true` | **+$1.00** per call | on top of the per-record price |
-| `patterns` job | **$10.00 per call** | flat |
-| `stats` job | **$5.00 per call** | flat |
+| `POST /search` | **0.01 credits per record** | records actually returned |
+| `POST /intelligence/jobs` — `records` | **0.01 credits per record** | records actually returned |
+| `POST /intelligence/jobs` — `insights` | **0.015 credits per record** | records actually analyzed |
+| `POST /intelligence/jobs` — `patterns` | **10 credits per call** | flat |
+| `POST /intelligence/jobs` — `stats` | **5 credits per call** | flat |
 | `GET /narratives/*`, `GET /intelligence/patterns/*`, `GET /health`, `GET /usage` | **free** | — |
+
+**Signals add-on:** adding `includeSignals: true` to an `insights` job is a flat **1 credit** per call on top of the per-record price.
 
 **Price never depends on `window`.** `window` chooses *what* to retrieve over, not what it costs: a 7-day query and an all-time query at the same size cost the same.
 
@@ -24,14 +26,13 @@ KINETK is metered in **credits**. **1 credit = $1.00.** Buy credits from the [KI
 
 | Call | Cost |
 |---|---|
-| `POST /search` at the default `limit` of 100, full answer | $1.00 |
-| `POST /search` with `limit: 20` | at most $0.20 |
-| `POST /search` with `types: ["narratives"]` | $0.00 |
-| `records` job, `limit: 1000` | at most $10.00 |
-| `insights` job, `window: "7d"` (default depth 1,500) | at most $22.50 |
-| `insights` job, `window: "30d"` or `"all"` (default depth 3,000) | at most $45.00 — $46.00 with `includeSignals` |
-| `patterns` job | $10.00 |
-| `stats` job | $5.00 |
+| `POST /search` at the default `limit` of 100, full answer | 1 credit |
+| `POST /search` with `limit: 20` | at most 0.2 credits |
+| `records` job, `limit: 1000` | at most 10 credits |
+| `insights` job, `window: "7d"` (default depth 1,500) | at most 22.5 credits |
+| `insights` job, `window: "30d"`, `"90d"` or `"all"` (default depth 3,000) | at most 45 credits — 46 with `includeSignals` |
+| `patterns` job | 10 credits |
+| `stats` job | 5 credits |
 
 A search row and a `records` record cost the same: `POST /search` is the fast, synchronous way to get a small set of rows, and a `records` job is the way to get thousands.
 
@@ -47,7 +48,7 @@ The flat-fee kinds (`patterns`, `stats`) settle at their fee even when they find
 
 ### `includeSignals` floors
 
-The `includeSignals` add-on writes LLM prose about the result, which needs enough evidence to be worth writing. Each window has a floor on the records analyzed: **7d 375 · 30d 750 · all 1,500.** An explicit `limit` below the floor is rejected with `400` at submit, and a run that analyzes fewer records than the floor fails with `422` and a **full refund**.
+The `includeSignals` add-on writes LLM prose about the result, which needs enough evidence to be worth writing. Each window has a floor on the records analyzed: **7d 375 · 30d 750 · 90d 750 · all 1,500.** An explicit `limit` below the floor is rejected with `400` at submit, and a run that analyzes fewer records than the floor fails with `422` and a **full refund**.
 
 ## Caching and re-reads
 

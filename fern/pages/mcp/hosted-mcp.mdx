@@ -1,5 +1,7 @@
-
-# Connect KINETK to Your AI Assistant
+---
+title: Connect KINETK to Your AI Assistant
+description: Set up the hosted KINETK MCP in Claude, ChatGPT, Cursor, Codex, Gemini or Grok. Nothing to install.
+---
 
 Your AI assistant is great at reasoning, but it doesn't know what's trending on TikTok this morning, which creators are driving a narrative, or how a hashtag is performing across platforms. KINETK does.
 
@@ -176,25 +178,7 @@ The OAuth endpoints and client credentials are issued by KINETK — contact the 
 
 ## How to use it
 
-Once connected, just talk to your assistant like always, and **mention "kinetk"** when you want live intelligence so it uses the connector instead of answering from memory.
-
-### Find what's trending (intelligence)
-
-> *"Use kinetk to tell me the latest trends in the World Cup."*
-
-You'll get synthesized takeaways — the narratives forming, which platform they're concentrated on, which hashtags carry an engagement premium, and where the white space is.
-
-### Find the source content
-
-> *"Use kinetk to pull the top posts about luxury watches this month."*
-
-You'll get the actual ranked posts and videos — platform, engagement, similarity, and enrichment (themes/tone) — so you can read, cite, or repurpose them.
-
-### Keep going
-
-> *"Which of those creators is biggest on Instagram?"* · *"Turn the third insight into three post ideas."*
-
-The assistant figures out what to look up, waits for results, and summarizes — you don't manage any of it.
+Once connected, just talk to your assistant and **mention "kinetk"** when you want live intelligence. See [What You Can Ask](./what-you-can-ask.mdx) for example prompts and what each one costs.
 
 ---
 
@@ -208,7 +192,7 @@ The assistant figures out what to look up, waits for results, and summarizes —
 
 ## About your account and usage
 
-Whether you sign in or use an API key, usage counts against your KINETK account. Pulling content and intelligence draws on your plan; simply being connected does not. Keep your API key private — treat it like a password.
+Whether you sign in or use an API key, usage counts against your KINETK account. Pulling content and running analyses uses credits; simply being connected doesn't. See [Pricing & Credits](../getting-started/pricing.mdx). Keep your API key private — treat it like a password.
 
 ---
 
@@ -217,5 +201,5 @@ Whether you sign in or use an API key, usage counts against your KINETK account.
 - **Assistant answers without using KINETK** → add "use kinetk" and confirm the connector shows connected.
 - **Claude Desktop "couldn't connect to the server"** → make sure you used the **sign-in** address (`…/graph/connect`), not the API-key address. Desktop can't send a key header.
 - **"Unauthorized"** on the API-key method → check the address and that `x-api-key` has no stray spaces.
-- **No Funds** → add funds to your account.
+- **Not enough credits** → buy credits on the [billing page](https://platform.kinetk.ai/billing).
 - **A trend question is slow** → deeper analysis runs a fuller pipeline; give it up to a minute.

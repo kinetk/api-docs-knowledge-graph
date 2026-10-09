@@ -13,8 +13,6 @@ navigation:
         contents:
           - page: Introduction
             path: ../pages/introduction.mdx
-          - page: Authentication
-            path: ../pages/getting-started/authentication.mdx
           - page: Quickstart
             path: ../pages/getting-started/quickstart.mdx
           - page: Pricing & Credits
@@ -25,12 +23,12 @@ navigation:
             path: ../pages/guides/choosing-an-endpoint.mdx
           - page: Search
             path: ../pages/guides/search.mdx
+          - page: Intelligence Jobs
+            path: ../pages/guides/intelligence-jobs.mdx
           - page: Narrative Intelligence
             path: ../pages/guides/narrative-intelligence.mdx
           - page: Pattern Intelligence
             path: ../pages/guides/pattern-intelligence.mdx
-          - page: Intelligence Jobs
-            path: ../pages/guides/intelligence-jobs.mdx
           - page: The Content Object
             path: ../pages/guides/content-object.mdx
           - page: Sync & Freshness
@@ -39,13 +37,27 @@ navigation:
         contents:
           - page: Overview
             path: ../pages/mcp/overview.mdx
-          - page: Hosted MCP
+          - page: Hosted MCP Setup
             path: ../pages/mcp/hosted-mcp.mdx
-          - page: Installation
-            path: ../pages/mcp/installation.mdx
-          - page: Tools
-            path: ../pages/mcp/tools.mdx
+          - page: What You Can Ask
+            path: ../pages/mcp/what-you-can-ask.mdx
+          - page: Local MCP (Advanced)
+            path: ../pages/mcp/local-mcp.mdx
   - tab: api
     layout:
       - api: API Reference
         api-name: v1.0.1
+        layout:
+          - POST /search
+          - POST /intelligence/jobs
+          - GET /intelligence/jobs/{id}
+          - GET /narratives/trending
+          - GET /narratives/search
+          - GET /narratives/{id}
+          - GET /narratives/{id}/trajectory
+          - GET /intelligence/patterns
+          - GET /intelligence/patterns/{patternKey}
+          - GET /intelligence/patterns/{patternKey}/content
+          - GET /intelligence/patterns/{patternKey}/lookalikes
+          - GET /usage
+          - GET /health

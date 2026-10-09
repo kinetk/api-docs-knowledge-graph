@@ -8,58 +8,71 @@ KINETK has three kinds of call. Picking the right one is most of what makes an i
 | Kind of call | Endpoints | Speed | Cost |
 |---|---|---|---|
 | **Precomputed reads** — the narrative and pattern maps, rebuilt on a schedule | `GET /narratives/*`, `GET /intelligence/patterns/*` | under 2 s | free |
-| **Synchronous search** — one bounded, live retrieval | `POST /search` | a few seconds | $0.010 per row returned |
+| **Fast search** — real-time retrieval and analysis (max 300 records) | `POST /search` | a few seconds | 0.01 credits per record |
 | **Async jobs** — deep retrieval and analysis over the live corpus | `POST /intelligence/jobs` (`records`, `insights`, `patterns`, `stats`) | 10 s to a few minutes | per record or flat |
+
+<Note>
+**Most calls take a time `window`: `7d`, `30d`, `90d` or `all`.** It sets how far back to look, from the last week to everything in the corpus. The window never changes the price.
+</Note>
 
 ## Which call answers my question?
 
-| You want to… | Call | Why |
-|---|---|---|
-| Show what's trending right now | `GET /narratives/trending` | Precomputed, free, instant. |
-| Find narratives about a topic that already exist | `GET /narratives/search?q=…` | Searches the precomputed map by name and tags. |
-| Drill into one narrative: its posts, creators, platform split | `GET /narratives/{id}` | Ids come from trending, search, `POST /search` and `insights`. |
-| See whether a narrative is accelerating or fading | `GET /narratives/{id}/trajectory` | Its metric history across rebuilds. |
-| Give an agent fresh content + context for a query, many times per task | `POST /search` | One call returns ranked posts *and* the narratives, patterns and creators they belong to. |
-| Pull hundreds or thousands of matching posts | `records` job | Up to 10,000 records per job; large results come back as a download link. |
-| Get the analytical "so what" about a topic | `insights` job | Narratives with trajectory and sentiment, tag and theme signals, platform opportunities. |
-| Understand what content *looks like* and how visual themes connect | `GET /intelligence/patterns/*` or a `patterns` job | The pattern map clusters posts by image/video similarity, not tags. |
-| Size a topic: how many posts, how much engagement, which platforms | `stats` job | An exact count over everything matching, not a sample. |
+### Ask about a topic
 
-## Recipes
+Start with search. Each of the others goes further in one direction.
 
-### An agent researching a topic
+<CardGroup cols={1}>
+  <Card title="Get a quick read on a topic" icon="magnifying-glass" href="/documentation/guides/search">
+    **`POST /search`** · 0.01 credits per record
 
-1. `POST /search` with the user's question. Read `content` for evidence and `narratives` for the stories it belongs to.
-2. For a narrative worth explaining, `GET /narratives/{id}` for its full evidence, and `GET /narratives/{id}/trajectory` for its momentum.
-3. If the agent needs the full analysis, submit an `insights` job and poll it while the agent keeps working.
+    See which narratives and posts are out there, in seconds. Returns ranked posts plus the narratives, patterns and creators they belong to. The best first call for almost any question.
+  </Card>
+  <Card title="Go deeper on what search found" icon="chart-line" href="/documentation/guides/intelligence-jobs">
+    **`insights` job** · 0.015 credits per record analyzed
 
-Each step hands the next an id, so the agent walks the graph instead of re-searching.
+    Learn what's rising, how people feel about it and where the opportunities are. Analyzes up to 10,000 posts for narrative trajectory, sentiment, tag and theme signals, and platform opportunities.
+  </Card>
+  <Card title="See what content looks like" icon="images" href="/documentation/guides/pattern-intelligence">
+    **`patterns` job** · 10 credits per call
 
-### A dashboard
+    Find the visual themes behind a topic. Matches your question to the pattern map, which groups posts by image and video similarity rather than tags, and returns the closest patterns with a written summary.
+  </Card>
+  <Card title="Measure how big a topic is" icon="chart-simple" href="/documentation/guides/intelligence-jobs">
+    **`stats` job** · 5 credits per call
 
-Poll `GET /narratives/trending` per window for the headline cards, and link each card to `GET /narratives/{id}`. These reads are free and sub-second, so refresh as often as your UI needs. Use `GET /health` to show data freshness.
+    See how much of the corpus is about your query. Exact totals over everything that matches, not a sample: posts, views, likes, comments and engagement, per platform.
+  </Card>
+  <Card title="Get just the social posts" icon="list" href="/documentation/guides/intelligence-jobs">
+    **`records` job** · 0.01 credits per record
 
-### A weekly research report
+    Pull the matching posts themselves, in bulk: up to 10,000 ranked posts per job. Large results come back as a download link.
+  </Card>
+</CardGroup>
 
-Submit one `insights` job per topic with `includeSignals: true` for the written takeaways, plus a `stats` job for the exact size of each topic. Both run async — submit them all, then poll.
+<Tip>
+Not sure where to start? Run `POST /search` with your question. If the answer is interesting, send the same query to an `insights` job to go deeper.
+</Tip>
 
-### Visual and creative research
+### Explore narratives (free)
 
-Start with `GET /intelligence/patterns` (browse) or a `patterns` job (match a question to the map). Follow a pattern's `lookalikes` to find topics that look alike but are tagged differently — connections keyword search will not surface.
+These read the precomputed maps. They're instant and cost nothing, so use them freely.
 
-## Making calls fast and cheap
+| You want to… | Call |
+|---|---|
+| See what's trending right now | `GET /narratives/trending` |
+| Find existing narratives about a topic | `GET /narratives/search?q=…` |
+| Dig into one narrative: its posts, creators and platform split | `GET /narratives/{id}` |
+| Check if a narrative is growing or fading | `GET /narratives/{id}/trajectory` |
 
-- **Start with the free reads.** If a precomputed narrative or pattern answers the question, you don't need a live retrieval.
-- **Size `limit` to what you will read.** On `POST /search` and `records` you pay per row returned, and smaller limits come back faster.
-- **Pick the narrowest `window` that answers the question.** It doesn't change the price, but `7d` and `30d` retrieve fresher, more focused evidence than `all`.
-- **Keep `POST /search` for interactive loops.** If you need more than 300 rows or a full analysis, submit a job instead of paging through search.
-- **Expect a `202` from `POST /search` now and then.** When a search runs past its time budget it hands the question to an `insights` job and returns a `jobId` — poll it like any other job.
-- **Send an `Idempotency-Key` when you retry a search,** so a network retry never pays twice.
-- **Don't resubmit a running job.** An identical submit while the first is running returns the same `jobId` (`dedup: true`); just poll.
-- **Poll jobs every 2–5 seconds,** and allow up to a few minutes for `window: "all"` and large pulls.
-- **Leave `includeGraphs` off on `insights`** unless you are drawing the graph — it makes the payload much larger.
-- **Use `returnRecords` on `insights`** only when you need the evidence posts inline; narratives already carry their representative posts.
+Narrative ids come from search, trending and `insights`, so you can go straight from a search result to `GET /narratives/{id}` and its trajectory without searching again. These reads are free and instant, so they're a good base for dashboards you refresh often.
+
+## Keeping costs down
+
+- **Start with the free reads.** If a narrative or pattern already answers the question, you don't need a paid call.
+- **Size `limit` to what you'll read.** You pay per record, and smaller limits come back faster.
+- **Pick the narrowest `window`.** It doesn't change the price, but `7d` and `30d` return fresher, more focused results than `all`.
+- **Use a job for anything over 300 records.** Search tops out at 300; a `records` or `insights` job goes up to 10,000.
 
 ## Through an AI assistant
 
-If you work in Claude, ChatGPT, Cursor or another MCP client, the [hosted MCP](../mcp/hosted-mcp.mdx) exposes the narrative reads, the pattern map and the async jobs as tools. Mention **kinetk** in your prompt so the assistant uses them. See [MCP Tools](../mcp/tools.mdx) for which tool maps to which call.
+If you work in Claude, ChatGPT, Cursor or another MCP client, the [hosted MCP](../mcp/hosted-mcp.mdx) exposes the narrative reads, the pattern map and the async jobs as tools. Mention **kinetk** in your prompt so the assistant uses them. See [What You Can Ask](../mcp/what-you-can-ask.mdx) for example prompts.

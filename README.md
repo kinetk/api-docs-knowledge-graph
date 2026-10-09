@@ -34,7 +34,7 @@ cp .env.example .env
 node dist/index.js   # starts the stdio MCP — Ctrl-C to exit
 ```
 
-To wire it into Claude Code / Cursor / Gemini CLI / etc., follow [`fern/pages/mcp/installation.mdx`](./fern/pages/mcp/installation.mdx) (the canonical user-facing install guide).
+To wire it into Claude Code / Cursor / Gemini CLI / etc., follow [`fern/pages/mcp/local-mcp.mdx`](./fern/pages/mcp/local-mcp.mdx) (the canonical user-facing install guide).
 
 ## Deployment
 
